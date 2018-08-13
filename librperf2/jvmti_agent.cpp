@@ -86,7 +86,7 @@ cbMethodCompiled(
 		    const jvmtiCompiledMethodLoadInlineRecord* inline_info =
 			reinterpret_cast<const jvmtiCompiledMethodLoadInlineRecord*>(compile_info);
 
-		    add_symbol(full_method_name, (uint64_t)code_addr, (uint64_t)inline_info->pcinfo[0].pc - (uint64_t)code_addr);
+		    get_symbols_resolver()->add_symbol("java-jit", full_method_name, (uint64_t)code_addr, (uint64_t)inline_info->pcinfo[0].pc - (uint64_t)code_addr);
 
 		    for (int i = 0; i < inline_info->numpcs; ++i) {
 			PCStackInfo* info = &inline_info->pcinfo[i];
@@ -132,23 +132,23 @@ cbMethodCompiled(
 			uint64_t iaddr = (uint64_t)info->pc;			
 			if (i != (inline_info->numpcs - 1)) {
 			    uint64_t inext_addr = (uint64_t)inline_info->pcinfo[i+1].pc;
-			    add_symbol(inline_stack, iaddr, inext_addr - iaddr);
+			    get_symbols_resolver()->add_symbol("java-jit", inline_stack, iaddr, inext_addr - iaddr);
 			} else {
 
 			    uint64_t inext_addr = (uint64_t)code_addr + code_size;
-			    add_symbol(inline_stack, iaddr, inext_addr - iaddr);
+			    get_symbols_resolver()->add_symbol("java-jit", inline_stack, iaddr, inext_addr - iaddr);
 			}
 
 		    }
 		}
 	    } else {
-		add_symbol("unknown1", (uint64_t)code_addr, code_size);
+		get_symbols_resolver()->add_symbol("java-jit", "unknown1", (uint64_t)code_addr, code_size);
 	    }
 	} else {
-	    add_symbol("unknown2", (uint64_t)code_addr, code_size);
+	    get_symbols_resolver()->add_symbol("java-jit", "unknown2", (uint64_t)code_addr, code_size);
 	}
     } else {
-      add_symbol("unknown3", (uint64_t)code_addr, code_size);
+      get_symbols_resolver()->add_symbol("java-jit", "unknown3", (uint64_t)code_addr, code_size);
     }
 }
 
@@ -190,7 +190,7 @@ cbMethodDynamic(jvmtiEnv *jvmti,
             jint length)
 {
     //std::cout << "dynamic method" << name << "@" << address << ":" << length << std::endl;
-    add_symbol(name, (uint64_t)address, length);
+    get_symbols_resolver()->add_symbol("java-dyn", name, (uint64_t)address, length);
 }
 
 void JNICALL cbMethodUnload

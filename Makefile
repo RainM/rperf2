@@ -4,7 +4,7 @@ GSON_TESTER_FOLDER=$(PWD)/gson-tester/
 
 CXX=/opt/rh/devtoolset-7/root/usr/bin/g++
 CC=/opt/rh/devtoolset-7/root/usr/bin/gcc
-OPTFLAGS?=-O0
+OPTFLAGS?=-O2
 CFLAGS=-g -pedantic -fpic
 CFLAGS+=$(OPTFLAGS)
 

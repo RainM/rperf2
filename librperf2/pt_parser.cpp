@@ -32,23 +32,44 @@ int decoder_callback(struct pt_packet_unknown* unknown, const struct pt_config* 
 
 }
 
-struct routine_description {
-    uint64_t addr;
-    size_t len;
-    std::string name;
-};
+int symbols_resolver::size() {
+    return m_symbols_by_addr2.size();
+}
 
-std::map<uint64_t, routine_description> symbols_by_addr2;
-
-void add_symbol(const std::string& symbol_name, uint64_t addr, size_t len) {
+void symbols_resolver::add_symbol(const std::string& dso, const std::string& symbol_name, uint64_t addr, size_t len) {
     routine_description descr;
     descr.addr = addr;
     descr.len = len;
     descr.name = symbol_name;
-    symbols_by_addr2[addr] = descr;
+    descr.dso = dso;
+    m_symbols_by_addr2[addr] = descr;
+
+    //std::cout << "new symbol " << symbol_name << "@" << dso << " at " << std::hex << addr << std::endl;
 }
 
+routine_description* symbols_resolver::lookup_symbol(uint64_t addr) {
+    auto it = m_symbols_by_addr2.lower_bound(addr);
+    if (it != m_symbols_by_addr2.end()) {
+	--it;
+	if (it != m_symbols_by_addr2.end()) {
+	    if (it->first > addr) {
+		std::cout << "STRANGE: " << std::hex << it->first << " <=> " << addr << std::endl;
+	    } else {
+		auto end_addr = it->second.addr + it->second.len;
+		if (end_addr >= addr) {
+		    return &it->second;
+		}
+	    }
+	}
+    }
 
+    return nullptr;
+}
+
+symbols_resolver static_resolver;
+symbols_resolver* get_symbols_resolver() {
+    return &static_resolver;
+}
 
 int read_memory(uint8_t *buffer, size_t size,const struct pt_asid *asid,uint64_t ip, void *context) {
     //std::cout << "read memory callback for IP " << std::hex << ip << std::endl;
@@ -231,32 +252,14 @@ void process_pt(char* pt_begin, size_t len) {
 
 	    try_resolve_symbol:
 		
-		auto it = symbols_by_addr2.lower_bound(ip);
-
-		
 		{
-		    {
-			if (it != symbols_by_addr2.end()) {
-			    //std::cout << "first: " << it->first << std::endl;
-			    --it;
-			      if (it != symbols_by_addr2.end()) 
-			    {
-				//std::cout << "second: " << it->first << std::endl;
-				if (it->first > ip) {
-				    std::cout << "STRANGE: " << std::hex << it->first << " <=> " << ip << std::endl;
-				} else {
-				    auto end_addr = it->second.addr + it->second.len;
-				    if (end_addr >= ip) {
-					symbol_by_ip = it->second.name;
-					//std::cout << "Resolved from cache: " << ip << " -> " << it->second.name << "(" << std::hex << it->second.addr << "@" << it->second.len << ")" << std::endl;
-
-					goto out;
-				    }
-				}
-			    }
-			}
+		    auto symbol_info = get_symbols_resolver()->lookup_symbol(ip);
+		    if (symbol_info != nullptr) {
+			symbol_by_ip = symbol_info->name;
+			symbol_by_ip += "@";
+			symbol_by_ip += symbol_info->dso;
+			goto out;
 		    }
-		    //std::cout << "resolving via dladdr" << std::endl;
 		    {
 			Dl_info info;
 			Elf64_Sym* syment;
@@ -293,21 +296,19 @@ void process_pt(char* pt_begin, size_t len) {
 						    status = ::dladdr1((void*)block.ip, &info, (void**)&linkmap, RTLD_DL_LINKMAP);
 						    if (status && linkmap) {
 							//std::cout << "true addr = " << std::hex << addr + linkmap->l_addr << std::endl;
-							std::string symbol_name;
-							symbol_name += symbol;
-							symbol_name += " -> ";
-							symbol_name += info.dli_fname;
-							add_symbol(symbol_name, addr + linkmap->l_addr, sz);
+							get_symbols_resolver()->add_symbol(info.dli_fname, symbol, addr + linkmap->l_addr, sz);
 						    }
 						}
 					    }
 					}
 
+					std::cout << "SYM TABLE side: " << get_symbols_resolver()->size();
+
 					goto try_resolve_symbol;
 				    }
 				}
 			    }
-
+/*
 			    symbol = (info.dli_sname ? info.dli_sname : "null");
 
 			    symbol += " -> ";
@@ -321,6 +322,7 @@ void process_pt(char* pt_begin, size_t len) {
 				symbol += "/";
 				symbol += buf;
 			    }
+*/
 			} else {
 			    symbol = "totally unknown";
 			}
@@ -336,7 +338,7 @@ void process_pt(char* pt_begin, size_t len) {
 			//key.len = 4000;
 			key.name = symbol;
 			
-			symbols_by_addr2[ip] = key;
+			//symbols_by_addr2[ip] = key;
 			symbol_by_ip = symbol;
 
 			//std::cout << "new block " << std::hex << key.addr << "@" << key.len << " -> " << symbol << std::endl;
@@ -407,7 +409,7 @@ void process_pt(char* pt_begin, size_t len) {
 
 			auto ns = get_ns_from_tsc(now);
 
-			std::cout << "timestamp: " << std::dec << (ns - start_ns) <<  " -> Routine: " << symbol_by_ip << "@" << std::hex << block.ip << std::endl;
+			std::cout << "timestamp: " << std::dec << (ns - start_ns) <<  " -> Routine: " << symbol_by_ip << "[" << std::hex << block.ip << "]" << std::endl;
 			if (lost_mtc || lost_cyc) {
 			    std::cout << "Lost: " << lost_mtc << "/" << lost_cyc << " mtc/cyc" << std::endl;
 			}
