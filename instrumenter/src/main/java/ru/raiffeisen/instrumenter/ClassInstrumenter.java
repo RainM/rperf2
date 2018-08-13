@@ -45,7 +45,7 @@ class ClassInstrumenter extends ClassVisitor {
                         if (name.equals(triggerMethod)) {
                             if (OUTPUT_PROCESSED_CLASSES) {
                                 System.out.println("Processing: " + class_name + "::" + name + "/" + signature);
-                                String wrapped_name = "__$$" + class_name + "$$" + name + "$$IMPL$$__";
+                                String wrapped_name = ("__" + class_name + "_" + name + "_IMPL__").replaceAll("/", "_");
 
                                 MethodVisitor mv;
 
