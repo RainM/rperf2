@@ -2,11 +2,9 @@
 #include <dlfcn.h>
 #include <elf.h>
 
-
 #include "pt_parser.hpp"
 
 extern "C" {
-  //#include "pt_cpu.h"
 #include "intel-pt.h"
 }
 
@@ -16,10 +14,6 @@ extern "C" {
 #include <string.h>
 #include <inttypes.h>
 #include <errno.h>
-
-extern "C" {
-  //#include <xed-interface.h>
-}
 
 #include <iostream>
 #include <map>
@@ -37,7 +31,7 @@ int symbols_resolver::size() {
 }
 
 void symbols_resolver::add_symbol(const routine_description& rd) {
-   m_symbols_by_addr2[rd.addr] = rd;
+    m_symbols_by_addr2[rd.addr] = rd;
 }
 
 void symbols_resolver::add_symbol(const std::string& dso, const std::string& symbol_name, uint64_t addr, size_t len) {
@@ -48,24 +42,16 @@ void symbols_resolver::add_symbol(const std::string& dso, const std::string& sym
     descr.dso = dso;
 
     add_symbol(descr);
-
-    //std::cout << "new symbol " << symbol_name << "@" << dso << " at " << std::hex << addr << std::endl;
 }
 
 routine_description* symbols_resolver::lookup_symbol(uint64_t addr) {
     auto it = m_symbols_by_addr2.lower_bound(addr);
+
     if (it != m_symbols_by_addr2.end()) {
-        --it;
-        if (it != m_symbols_by_addr2.end()) {
-            if (it->first > addr) {
-                std::cout << "STRANGE: " << std::hex << it->first << " <=> " << addr << std::endl;
-            } else {
-                auto end_addr = it->second.addr + it->second.len;
-                if (end_addr >= addr) {
-                    return &it->second;
-                }
-            }
-        }
+	auto end_addr = it->second.addr + it->second.len;
+	if (end_addr >= addr) {
+	    return &it->second;
+	}
     }
 
     return nullptr;
@@ -113,8 +99,6 @@ int load_symbols_from_dso(const char* dso, uint64_t any_sym_addr) {
 }
 
 int read_memory(uint8_t *buffer, size_t size,const struct pt_asid *asid,uint64_t ip, void *context) {
-    //std::cout << "read memory callback for IP " << std::hex << ip << std::endl;
-
     if (ip == 0) {
         return 0;
     }
@@ -123,10 +107,6 @@ int read_memory(uint8_t *buffer, size_t size,const struct pt_asid *asid,uint64_t
         buffer[i] = *(((uint8_t*)ip) + i);
     }
     return size;
-}
-
-int read_memory_callback(uint8_t* buffer, size_t size, const struct pt_asid* asid, uint64_t ip, void* context) {
-    std::cout << "read memory callback for IP " << ip << std::endl;
 }
 
 uint64_t get_ns_from_tsc(uint64_t tsc) {
@@ -190,7 +170,7 @@ void process_pt(char* pt_begin, size_t len) {
 
     uint64_t prev_timestamp = 0;
     uint64_t start_ns = 0;
-    //uint64_t prev_now = 0;
+
     std::unordered_map<std::string, uint64_t> profile;
     std::vector<std::string> symbols_the_same_time;
 
@@ -232,14 +212,13 @@ void process_pt(char* pt_begin, size_t len) {
                     }
                 }
                 std::cout << "Total time: " << std::dec << get_ns_from_tsc(total) << std::endl;
-
                 /*
-                std::cout << "symbol table!!!!" << std::endl;
-                auto it =  symbols_by_addr2.begin(), it_end =  symbols_by_addr2.end();
-                while (it != it_end) {
-                    std::cout << std::hex << it->first << "@" << it->second.len << " -> " << it->second.name << "\n";
-                    ++it;
-                }
+		  std::cout << "symbol table!!!!" << std::endl;
+		  auto it =  symbols_by_addr2.begin(), it_end =  symbols_by_addr2.end();
+		  while (it != it_end) {
+		  std::cout << std::hex << it->first << "@" << it->second.len << " -> " << it->second.name << "\n";
+		  ++it;
+		  }
                 */
                 return;
             }
@@ -273,9 +252,12 @@ void process_pt(char* pt_begin, size_t len) {
 
                 uint64_t ip = (uint64_t)block.ip;
 
-                if (ip >= dummy_symbol_start && ip <= dummy_symbol_end) {
-                    continue;
-                }
+		/*
+		  if (ip >= dummy_symbol_start && ip <= dummy_symbol_end) {
+		  // Skip these IPs since they are relevant for profiler waiting routines
+		  continue;
+		  }
+		*/
 
             try_resolve_symbol:
 
@@ -312,129 +294,71 @@ void process_pt(char* pt_begin, size_t len) {
                         if (syment) {
                             key.len = syment->st_size;
                         } else {
-                            key.len = 1;
+                            key.len = ip - (uint64_t)info.dli_saddr;
                         }
                         key.name = info.dli_sname ? info.dli_sname : "totally unknown";
 
                         get_symbols_resolver()->add_symbol(key);
+			std::cout << "resolve add " << ip << " found symbol: " << key.name << "@" << std::hex << key.addr << "/" << key.len << std::endl;
+
+			goto try_resolve_symbol;
                     }
 
                 }
-                out:
+	    out:
 
-                if (symbol_by_ip != std::string("wait_next_recorded_bunch")) {
-                    if (symbol_by_ip != std::string("wait_next_recorded_bunch -> ./librperf2.so")) {
-                        //if (block.ip & 0x402000 == 0) {
+		//profile[symbol_by_ip] += 1;
 
-                        profile[symbol_by_ip] += 1;
+		uint64_t now;
+		uint32_t lost_mtc;
+		uint32_t lost_cyc;
+		auto status = pt_blk_time(decoder, &now, &lost_mtc, &lost_cyc);
+		if (status < 0) {
+		    std::cout << "can't get tsc" << std::endl;
+		}
 
-                        uint64_t now;
-                        uint32_t lost_mtc;
-                        uint32_t lost_cyc;
-                        auto status = pt_blk_time(decoder, &now, &lost_mtc, &lost_cyc);
-                        if (status < 0) {
-                            std::cout << "can't get tsc" << std::endl;
-                        }
+		if (prev_timestamp > now) {
+		    std::cout << "Did you use time machine? " << prev_timestamp << " -> " << now << std::endl;
+		}
 
-                        //std::cout << "now = " << now << std::endl;
+		if (prev_timestamp == 0) {
+		    prev_timestamp = now;
+		    start_ns = get_ns_from_tsc(now);
+		}
 
+		//if (prev_timestamp == now) {
+		symbols_the_same_time.push_back(symbol_by_ip);
+		//} else {
+		if (prev_timestamp != now) {
 
-                        if (prev_timestamp > now) {
-                            std::cout << "Did you use time machine? " << prev_timestamp << " -> " << now << std::endl;
-                        }
-                        /*
+		    auto time_diff = now - prev_timestamp;
+		    auto bb_timing = time_diff / symbols_the_same_time.size();
 
-                        prev_now = now;
-                        */
+		    auto error = time_diff - (bb_timing * symbols_the_same_time.size());
 
-#if 1
-                        if (prev_timestamp == 0) {
-                            prev_timestamp = now;
-                            start_ns = get_ns_from_tsc(now);
-                            //std::cout << "set prev_timestamp = " << now << std::endl;
-                        }
+		    for (auto& symbol : symbols_the_same_time) {
+			profile[symbol] += bb_timing;
+		    }
+		    profile[symbols_the_same_time.back()] += error;
 
-                        //if (prev_timestamp == now) {
-                        symbols_the_same_time.push_back(symbol_by_ip);
-                        //} else {
-                        if (prev_timestamp != now) {
-                            // next timestamp
+		    symbols_the_same_time.clear();
 
-                            //std::cout << "symbols next timestamp: " << now << "/" << prev_timestamp << std::endl;
+		    prev_timestamp = now;
+		}
 
+		auto ns = get_ns_from_tsc(now);
 
-                            auto time_diff = now - prev_timestamp;
-                            auto bb_timing = time_diff / symbols_the_same_time.size();
+		std::cout << "timestamp: " << std::dec << (ns - start_ns) <<  " -> Routine: " << symbol_by_ip << "[" << std::hex << block.ip << "]" << std::endl;
+		if (lost_mtc || lost_cyc) {
+		    std::cout << "Lost: " << lost_mtc << "/" << lost_cyc << " mtc/cyc" << std::endl;
+		}
 
-                            //std::cout << "time diff = " << time_diff << "/" << bb_timing << std::endl;
-
-                            for (auto& symbol : symbols_the_same_time) {
-                                auto old_value = profile[symbol];
-                                profile[symbol] += bb_timing;
-                                //profile[symbol] += 1;
-                                //std::cout << symbol << " -> " << profile[symbol] << "\n";
-                                //std::cout << "Update profile for " << symbol << " " << old_value << " -> " << profile[symbol] << std::endl;
-                            }
-
-                            symbols_the_same_time.clear();
-
-                            prev_timestamp = now;
-                        }
-#endif
-
-                        auto ns = get_ns_from_tsc(now);
-
-                        std::cout << "timestamp: " << std::dec << (ns - start_ns) <<  " -> Routine: " << symbol_by_ip << "[" << std::hex << block.ip << "]" << std::endl;
-                        if (lost_mtc || lost_cyc) {
-                            std::cout << "Lost: " << lost_mtc << "/" << lost_cyc << " mtc/cyc" << std::endl;
-                        }
-
-
-                        //std::cout << "Routine: " << symbol_by_ip << "@" << std::hex << block.ip << std::endl;
-
-                        uint64_t new_sync;
-                        auto errcode = pt_blk_get_offset(decoder, &new_sync);
-                        //std::cout << "offset: " << new_sync << std::endl;
-
-                        //uint64_t new_sync;
-                        //errcode = pt_blk_get_offset(decoder, &new_sync);
-                        //std::cout << "offset = " << std::dec << new_sync << "\n";
-
-                        //}
-                    }
-                }
-            }
-        }
-
-        std::cout << "status == " << status << std::endl;
+		uint64_t new_sync;
+		auto errcode = pt_blk_get_offset(decoder, &new_sync);
+	    }
+	}
+	std::cout << "status == " << status << std::endl;
     }
-
-/*
-    auto default_image = pt_insn_get_image(decoder);
-    pt_image_set_callback(default_image, read_memory_callback, nullptr);
-
-    for (;;) {
-
-    errcode = pt_insn_sync_forward(decoder);
-    if (errcode < 0) {
-    std::cout << "can't sync decoder" << std::endl;
-}
-
-    for (;;) {
-    struct pt_insn insn;
-
-    errcode = pt_insn_next(decoder, &insn, sizeof(insn));
-
-    if (insn.iclass != ptic_error) {
-    std::cout << "Instruction!" << std::endl;
-}
-
-    if (errcode < 0) {
-    break;
-}
-}
-}
-*/
 
     pt_blk_free_decoder(decoder);
 

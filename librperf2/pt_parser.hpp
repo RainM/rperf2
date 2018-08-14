@@ -28,7 +28,7 @@ struct symbols_resolver {
 
     int size();
 private:
-    std::map<uint64_t, routine_description> m_symbols_by_addr2;
+    std::map<uint64_t, routine_description, std::greater<uint64_t>> m_symbols_by_addr2;
 };
 
 symbols_resolver* get_symbols_resolver();
