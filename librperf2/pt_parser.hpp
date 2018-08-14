@@ -22,6 +22,7 @@ struct routine_description {
 };
 
 struct symbols_resolver {
+    void add_symbol(const routine_description& rd);
     void add_symbol(const std::string& dso, const std::string& symbol_name, uint64_t addr, size_t len);
     routine_description* lookup_symbol(uint64_t addr);
 
