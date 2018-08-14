@@ -671,7 +671,7 @@ perf_pt_start_tracer(struct tracer_ctx *tr_ctx, struct perf_pt_trace *trace, str
         goto clean;
     }
 
-    wait_next_recorded_bunch();
+    //wait_next_recorded_bunch();
     
 clean:
     return ret;

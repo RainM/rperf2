@@ -83,8 +83,6 @@ int load_symbols_from_dso(const char* dso, uint64_t any_sym_addr) {
         char type[10];
         char symbol[4096];
 
-
-
         while (!feof(nm_stm)) {
             char buf[10000] = {};
             if (fgets(buf, sizeof(buf), nm_stm) != NULL) {
@@ -157,8 +155,6 @@ void process_pt(char* pt_begin, size_t len) {
     config.cpuid_0x15_ebx = ebx;
     config.mtc_freq = 3;
     config.nom_freq = 0x1d;
-
-
 
     decoder = pt_blk_alloc_decoder(&config);
     if (!decoder) {
@@ -245,19 +241,12 @@ void process_pt(char* pt_begin, size_t len) {
 
             if (status < 0) {
                 auto code = pt_error_code(-status);
-                std::cout << "can't pt_blk_next " << pt_errstr(code) << std::endl;
+                //std::cout << "can't pt_blk_next " << pt_errstr(code) << std::endl;
                 break;
             } else {
                 std::string symbol_by_ip;
 
                 uint64_t ip = (uint64_t)block.ip;
-
-		/*
-		  if (ip >= dummy_symbol_start && ip <= dummy_symbol_end) {
-		  // Skip these IPs since they are relevant for profiler waiting routines
-		  continue;
-		  }
-		*/
 
             try_resolve_symbol:
 
@@ -280,7 +269,7 @@ void process_pt(char* pt_begin, size_t len) {
 
                                     load_symbols_from_dso(info.dli_fname, ip);
 
-                                    // ]if was brand new DSO. Let's try to lookup symbol one more time
+                                    // if was brand new DSO. Let's try to lookup symbol one more time
                                     goto try_resolve_symbol;
                                 }
                             }
@@ -307,8 +296,6 @@ void process_pt(char* pt_begin, size_t len) {
                 }
 	    out:
 
-		//profile[symbol_by_ip] += 1;
-
 		uint64_t now;
 		uint32_t lost_mtc;
 		uint32_t lost_cyc;
@@ -326,9 +313,7 @@ void process_pt(char* pt_begin, size_t len) {
 		    start_ns = get_ns_from_tsc(now);
 		}
 
-		//if (prev_timestamp == now) {
 		symbols_the_same_time.push_back(symbol_by_ip);
-		//} else {
 		if (prev_timestamp != now) {
 
 		    auto time_diff = now - prev_timestamp;
@@ -359,7 +344,5 @@ void process_pt(char* pt_begin, size_t len) {
 	}
 	std::cout << "status == " << status << std::endl;
     }
-
     pt_blk_free_decoder(decoder);
-
 }
