@@ -41,16 +41,23 @@ public class InstrumenterAsm {
             }
         }
         Pattern[] patterns = patterns_local.toArray(new Pattern[patterns_local.size()]);
-        Boolean dump_class_files = System.getProperty("DUMP_OUT_CLASSES") != null;
 
         String triggerMethod = System.getProperty("TRIGGER_METHOD");
         String triggerClass = System.getProperty("TRIGGER_CLASS");
         String triggerMethodSignature = System.getProperty("TRIGGER_METHOD_SIGNATURE");
         String countdownStr = System.getProperty("TRIGGER_COUNTDOWN");
-        String percentile = System.getProperty("PERCENTILE");
+        String percentile_str = System.getProperty("PERCENTILE");
+	String perf_buf_sz_str = System.getProperty("PERF_BUF_SZ");
+	String perf_aux_sz_str = System.getProperty("PERF_AUX_SZ");
+	String trace_max_sz_str = System.getProperty("TRACE_MAX_SZ");
+
+	long perf_buf_sz = perf_buf_sz_str != null ? Long.valueOf(perf_buf_sz_str) : 32;
+	long perf_aux_sz = perf_aux_sz_str != null ? Long.valueOf(perf_aux_sz_str) : 256;
+	long trace_max_sz = trace_max_sz_str != null ? Long.valueOf(trace_max_sz_str) : 10_000_000;
+	double percentile = percentile_str != null ? Double.valueOf(percentile_str) : 0;
 
         int countdown = countdownStr != null ? Integer.valueOf(countdownStr) : 1;
-        PerfPtProf.init(countdown, Double.valueOf(percentile));
+        PerfPtProf.init(countdown, percentile, perf_buf_sz, perf_aux_sz, trace_max_sz);
 
         System.out.println("Trigger class: " + triggerClass);
         System.out.println("Trigger method: " + triggerMethod);
@@ -91,6 +98,7 @@ public class InstrumenterAsm {
 
             byte[] result = cw.toByteArray();
 
+	    /*
             if (dump_class_files) {
                 File out_dir = new File("out");
                 out_dir.mkdir();
@@ -104,7 +112,8 @@ public class InstrumenterAsm {
                     e.printStackTrace();
                     System.exit(2);
                 }
-            }
+		}
+	    */
 
             return result;
         });

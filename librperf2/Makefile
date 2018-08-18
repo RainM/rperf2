@@ -8,4 +8,4 @@ librperf2:
 	$(CXX) jni_impl.cpp -c $(JNI_INCLUDE_FLAGS) -std=c++14 $(CFLAGS) -I../processor-trace/install/include/
 	$(CC) collect.c -c $(JNI_INCLUDE_FLAGS) -std=c11 $(CFLAGS)
 	$(CXX) pt_parser.cpp -c $(JNI_INCLUDE_FLAGS) -std=c++14 $(CFLAGS) -I../processor-trace/install/include/
-	$(CXX) collect.o pt_parser.o jni_impl.o jvmti_agent.o -shared -o librperf2.so -lipt -L../processor-trace/install/lib64 -rdynamic
+	$(CXX) $(CFLAGS) collect.o pt_parser.o jni_impl.o jvmti_agent.o -shared -o librperf2.so -lipt -L../processor-trace/install/lib64 -rdynamic

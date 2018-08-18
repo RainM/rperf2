@@ -21,41 +21,178 @@ extern "C" {
 
 #include "pt_parser.hpp"
 
-std::vector<uint64_t> timings;
-std::atomic<int64_t> skip_counter;
-uint32_t number_of_iterations;
-uint64_t threshold_timing;
+struct perf_pt_prof_engine;
+
+struct perf_pt_prof_engine* g_prof_engine;
+
+struct perf_pt_prof_state {
+    std::vector<uint64_t> timings;
+    int64_t skip_counter;
+};
+
 
 pid_t gettid() {
     return syscall(SYS_gettid);
 }
 
-bool is_start = false;
-struct timespec start_time;
-struct tracer_ctx* tracer_ctx;
-struct perf_pt_trace trace;
-struct perf_pt_config cfg = {};
+struct perf_pt_prof_engine {
+    virtual ~perf_pt_prof_engine() {}
+
+    perf_pt_prof_engine(int skip_n, long buf_sz, long aux_sz, long trace_sz):
+        m_skip_cntr(skip_n)
+    {
+        m_tracer_config.data_bufsize = buf_sz;
+        m_tracer_config.aux_bufsize = aux_sz;
+
+        m_data_sz = trace_sz;
+        m_data_buf = ::malloc(m_data_sz);
+    }
+
+    void start() {
+        if (--m_skip_cntr <= 0) {
+            do_start();
+        }
+    }
+
+    void stop() {
+        if (m_skip_cntr <= 0) {
+            do_stop();
+        }
+    }
+
+protected:
+    virtual void do_start() = 0;
+    virtual void do_stop() = 0;
+
+    void start_prof() {
+        struct perf_pt_cerror err = {};
+
+        m_tracer_ctx = perf_pt_init_tracer(&m_tracer_config, &err);
+
+        ::memset(&m_trace, 0, sizeof(m_trace));
+
+        m_trace.capacity = m_data_sz;
+        m_trace.buf.p = m_data_buf;
+
+        bool status = perf_pt_start_tracer(m_tracer_ctx, &m_trace, &err);
+
+        ::clock_gettime(CLOCK_MONOTONIC_RAW, &m_start_time);
+    }
+
+    uint64_t stop_prof() {
+
+        struct timespec end_time;
+        ::clock_gettime(CLOCK_MONOTONIC_RAW, &end_time);
+        pid_t tid = ::gettid();
+        auto duration = (uint64_t)end_time.tv_sec - (uint64_t)m_start_time.tv_sec;
+        duration *= 1000000000;
+        duration += end_time.tv_nsec;
+        duration -= m_start_time.tv_nsec;
+
+        struct perf_pt_cerror err = {};
+        auto status = perf_pt_stop_tracer(m_tracer_ctx, &err);
+        perf_pt_free_tracer(m_tracer_ctx, &err);
+
+        return duration;
+    }
+
+    void parse_trace() {
+        process_pt((char*)m_trace.buf.p, m_trace.len);
+        std::cout << "Profiling DONE" << std::endl;
+        ::exit(1);
+    }
+
+private:
+    struct timespec m_start_time;
+    int m_data_sz;
+    void* m_data_buf;
+    int64_t m_skip_cntr;
+    struct tracer_ctx* m_tracer_ctx;
+    struct perf_pt_config m_tracer_config;
+    struct perf_pt_trace m_trace;
+};
+
+struct perf_pt_prof_first_occurence: perf_pt_prof_engine {
+    perf_pt_prof_first_occurence(int skip_n, long buf_sz, long aux_sz, long trace_sz):
+        perf_pt_prof_engine(skip_n, buf_sz, aux_sz, trace_sz) {}
+
+    virtual void do_start() override {
+        start_prof();
+    }
+    virtual void do_stop() override {
+        stop_prof();
+        parse_trace();
+    }
+
+    virtual ~perf_pt_prof_first_occurence() {
+
+    }
+};
+
+struct perf_pt_prof_percentile: perf_pt_prof_engine {
+    perf_pt_prof_percentile(int skip_n, double percentile, long buf_sz, long aux_sz, long trace_sz):
+        perf_pt_prof_engine(skip_n, buf_sz, aux_sz, trace_sz), m_percentile(percentile), m_percentile_timing(0) {
+
+        double one_minus_n = (double)1 - percentile;
+        m_number_of_iterations = ceil((double)1 / one_minus_n) - 1;
+        m_timings.reserve(m_number_of_iterations);
+    }
+
+    virtual void do_start() override {
+        start_prof();
+    }
+    virtual void do_stop() override {
+        auto elapsed = stop_prof();
+        if (m_percentile_timing) {
+            parse_trace();
+        } else {
+            m_timings.push_back(elapsed);
+            if (m_timings.size() == m_number_of_iterations) {
+                auto max_timing = std::max_element(std::begin(m_timings), std::end(m_timings));
+                m_percentile_timing = *max_timing;
+                std::cout << "Median: " << m_timings[m_timings.size()/2] << "ns\n";
+                std::cout << "Timing for " << m_percentile << " timings: " << m_percentile_timing << std::endl;
+            }
+        }
+    }
+
+    virtual ~perf_pt_prof_percentile() {
+
+    }
+
+private:
+    std::vector<uint64_t> m_timings;
+    uint64_t m_number_of_iterations;
+    double m_percentile;
+    uint64_t m_percentile_timing;
+};
+
+perf_pt_prof_engine* create_prof_engine(int skip_n, double percentile, long buf_sz, long aux_sz, long trace_sz) {
+    if (percentile <= 0.5) {
+        return new perf_pt_prof_first_occurence(skip_n, buf_sz, aux_sz, trace_sz);
+    } else {
+        return new perf_pt_prof_percentile(skip_n, percentile, buf_sz, aux_sz, trace_sz);
+    }
+}
 
 /*
  * Class:     ru_raiffeisen_PerfPtProf
  * Method:    init
- * Signature: (ID)V
+ * Signature: (IDJJJ)V
  */
-JNIEXPORT void JNICALL Java_ru_raiffeisen_PerfPtProf_init
-  (JNIEnv *, jclass, jint skip_n, jdouble percentile) {
-    double one_minus_n = (double)1 - percentile;
-    number_of_iterations = ceil((double)1 / one_minus_n) - 1;
-    std::cout << "waiting " << number_of_iterations << " iterations" <<std::endl;
-
-    timings.reserve(number_of_iterations);
-
-    skip_counter.store(skip_n);
-
-    cfg.data_bufsize = 32;
-    cfg.aux_bufsize = 256;
+JNIEXPORT void JNICALL
+Java_ru_raiffeisen_PerfPtProf_init
+(
+    JNIEnv *,
+    jclass,
+    jint skip_n,
+    jdouble percentile,
+    jlong buf_sz,
+    jlong aux_sz,
+    jlong trace_sz)
+{
+    g_prof_engine = create_prof_engine(skip_n, percentile, buf_sz, aux_sz, trace_sz);
 }
-
-void* data_buf = malloc(10000000);
 
 /*
  * Class:     ru_raiffeisen_PerfPtProf
@@ -63,24 +200,8 @@ void* data_buf = malloc(10000000);
  * Signature: ()V
  */
 JNIEXPORT void JNICALL Java_ru_raiffeisen_PerfPtProf_start(JNIEnv *, jclass) {
-    auto old_val = --skip_counter;
 
-    if (old_val <= 0) {
-	is_start = true;
-	pid_t tid = ::gettid();
-
-	struct perf_pt_cerror err = {};
-	tracer_ctx = perf_pt_init_tracer(&cfg, &err);
-
-	::memset(&trace, 0, sizeof(trace));
-
-	trace.capacity = 10000000;
-	trace.buf.p = data_buf;//malloc(1000000);
-
-	bool status = perf_pt_start_tracer(tracer_ctx, &trace, &err);
-
-	::clock_gettime(CLOCK_MONOTONIC_RAW, &start_time);
-    }
+    g_prof_engine->start();
 }
 
 /*
@@ -89,36 +210,34 @@ JNIEXPORT void JNICALL Java_ru_raiffeisen_PerfPtProf_start(JNIEnv *, jclass) {
  * Signature: ()V
  */
 JNIEXPORT void JNICALL Java_ru_raiffeisen_PerfPtProf_stop(JNIEnv *, jclass) {
-    if (is_start) {
-	struct timespec end_time;
-	::clock_gettime(CLOCK_MONOTONIC_RAW, &end_time);
-	pid_t tid = ::gettid();
-	auto duration = (uint64_t)end_time.tv_sec - (uint64_t)start_time.tv_sec;
-	duration *= 1000000000;
-	duration += end_time.tv_nsec;
-	duration -= start_time.tv_nsec;
 
-	struct perf_pt_cerror err = {};
-	auto status = perf_pt_stop_tracer(tracer_ctx, &err);
+    g_prof_engine->stop();
+}
 
-	if (threshold_timing && duration > threshold_timing) {
-	    std::cout << "Timing " << duration << "ns is longer than " << threshold_timing << "ns" << std::endl;
-	    process_pt((char*)trace.buf.p, trace.len);
+#include <execinfo.h>
 
-	    ::exit(1);
-	}
+extern "C" void perf_pt_set_err(struct perf_pt_cerror *, int, int) {
+    int j, nptrs;
+    void *buffer[100];
+    char **strings;
 
-	perf_pt_free_tracer(tracer_ctx, &err);
+    nptrs = backtrace(buffer, 100);
+    printf("backtrace() returned %d addresses\n", nptrs);
 
-	
-	timings.push_back(duration);
+    /* The call backtrace_symbols_fd(buffer, nptrs, STDOUT_FILENO)
+       would produce similar output to the following: */
 
-	if (timings.size() == number_of_iterations) {
-	    std::sort(std::begin(timings), std::end(timings));
-	    threshold_timing = timings.back();
-
-	    std::cout << "mediana = " << timings[timings.size()/2] << "ns" << std::endl;
-	    std::cout << "required percentile = " << timings.back() << "ns" << std::endl;
-	}
+    strings = backtrace_symbols(buffer, nptrs);
+    if (strings == NULL) {
+        perror("backtrace_symbols");
+        exit(EXIT_FAILURE);
     }
+
+    for (j = 0; j < nptrs; j++)
+        printf("%s\n", strings[j]);
+
+    free(strings);
+
+
+    ::exit(11);
 }

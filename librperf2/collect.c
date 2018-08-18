@@ -280,6 +280,8 @@ read_aux(void *aux_buf, struct perf_event_mmap_page *hdr,
     // Reallocate the trace storage buffer if more space is required.
     __u64 required_capacity = trace->len + new_data_size;
     if (required_capacity > trace->capacity) {
+	printf("new data sz = %p\n", new_data_size);
+	printf("head = %p, tail = %p, sz = %p\n", head, tail, size);
 	printf("REALLOC!!!! %d -> %d\n",  trace->capacity, required_capacity);
         // Over-allocate to 2x what we need, checking that the result fits in
         // the size_t argument of realloc(3).
@@ -296,8 +298,10 @@ read_aux(void *aux_buf, struct perf_event_mmap_page *hdr,
 	    printf("Can't realloc\n");
             return false;
         }
-        trace->capacity = new_capacity;
-        trace->buf.p = new_buf;
+        //trace->capacity = new_capacity;
+        //trace->buf.p = new_buf;
+	
+	exit(12);
     }
     
     // Finally append the new AUX data to the end of the trace storage buffer.

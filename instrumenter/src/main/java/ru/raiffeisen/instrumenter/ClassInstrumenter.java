@@ -10,8 +10,6 @@ import java.util.function.Function;
  * Created by Sergey Melnikov on 16.04.17.
  */
 class ClassInstrumenter extends ClassVisitor {
-
-    private final static boolean OUTPUT_PROCESSED_CLASSES = System.getProperty("OUTPUT_INSTRUMENTED_CLASSES") != null;
     private final String triggerClass;
     private final String triggerMethod;
     private final String triggerMethodSignature;
@@ -43,7 +41,6 @@ class ClassInstrumenter extends ClassVisitor {
                 if (!name.equals("<clinit>")) {
                     if (class_name.equals(triggerClass)) {
                         if (name.equals(triggerMethod)) {
-                            if (OUTPUT_PROCESSED_CLASSES) {
                                 System.out.println("Processing: " + class_name + "::" + name + "/" + signature);
                                 String wrapped_name = ("__" + class_name + "_" + name + "_IMPL__").replaceAll("/", "_");
 
@@ -60,8 +57,6 @@ class ClassInstrumenter extends ClassVisitor {
                                         class_name));
 
                                 return mv;
-
-                            }
                         }
                     }
 

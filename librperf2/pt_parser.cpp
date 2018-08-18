@@ -22,6 +22,8 @@ extern "C" {
 #include <vector>
 #include <set>
 
+#include "common.h"
+
 int decoder_callback(struct pt_packet_unknown* unknown, const struct pt_config* config, const uint8_t* pos, void* context) {
 
 }
@@ -31,6 +33,7 @@ int symbols_resolver::size() {
 }
 
 void symbols_resolver::add_symbol(const routine_description& rd) {
+    DEBUG(std::cout << "new symbol " << rd.name << " at " << std::hex << rd.addr << "/" << rd.len << std::endl);
     m_symbols_by_addr2[rd.addr] = rd;
 }
 
@@ -47,10 +50,19 @@ void symbols_resolver::add_symbol(const std::string& dso, const std::string& sym
 routine_description* symbols_resolver::lookup_symbol(uint64_t addr) {
     auto it = m_symbols_by_addr2.lower_bound(addr);
 
-    if (it != m_symbols_by_addr2.end()) {
-	auto end_addr = it->second.addr + it->second.len;
-	if (end_addr >= addr) {
-	    return &it->second;
+    size_t cntr = 10;
+    while (cntr) {
+	if (it != m_symbols_by_addr2.end()) {
+	    auto end_addr = it->second.addr + it->second.len;
+	    if (end_addr >= addr) {
+		DEBUG(std::cout << "Lookup addr "  << std::hex << addr << " -> " << it->second.name << "@" << it->second.addr << "/" << it->second.len << std::endl);
+		return &it->second;
+	    }
+
+	    ++it; // since map ordered with std::greater, we need to use '++' operator in order to get smaller addresses
+	    cntr -= 1;
+	} else {
+	    break;
 	}
     }
 
@@ -248,6 +260,7 @@ void process_pt(char* pt_begin, size_t len) {
 
                 uint64_t ip = (uint64_t)block.ip;
 
+		bool resolved_once = false;
             try_resolve_symbol:
 
                 {
@@ -274,6 +287,15 @@ void process_pt(char* pt_begin, size_t len) {
                                 }
                             }
                         }
+			
+			if (!resolved_once) {
+			    resolved_once = true;
+			} else {
+			    std::cerr << "Something went terribly wrong... Cyclic lookup" << std::endl;
+			    // cyclic loop
+			    *(int*)0 = 0;
+			}
+
                         // if we are here, it's impossible to lookup any symbol for given IP
                         // let's just fill values from dladd call
 
@@ -288,7 +310,7 @@ void process_pt(char* pt_begin, size_t len) {
                         key.name = info.dli_sname ? info.dli_sname : "totally unknown";
 
                         get_symbols_resolver()->add_symbol(key);
-			std::cout << "resolve add " << ip << " found symbol: " << key.name << "@" << std::hex << key.addr << "/" << key.len << std::endl;
+			std::cout << "resolve addr " << ip << " found symbol: " << key.name << "@" << std::hex << key.addr << "/" << key.len << std::endl;
 
 			goto try_resolve_symbol;
                     }
