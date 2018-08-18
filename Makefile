@@ -4,7 +4,7 @@ GSON_TESTER_FOLDER=$(PWD)/gson-tester/
 
 CXX=/opt/rh/devtoolset-7/root/usr/bin/g++
 CC=/opt/rh/devtoolset-7/root/usr/bin/gcc
-OPTFLAGS?=-O0
+OPTFLAGS?=-O3 -flto
 CFLAGS=-g -pedantic -fpic
 CFLAGS+=$(OPTFLAGS)
 #CFLAGS+=-DENABLE_DEBUG
@@ -31,11 +31,14 @@ build-librperf2:
 run-gson-tester-999:
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH):librperf2:processor-trace/install/lib64 \
 		java \
+			-XX:+UseConcMarkSweepGC \
+			-Xmx40g \
 			-DTRIGGER_METHOD=decode \
 			-DTRIGGER_CLASS=ru/raiffeisen/App \
-			-DTRIGGER_COUNTDOWN=2000 \
-			-DOUTPUT_INSTRUMENTED_CLASSES=1 \
-			-DPERCENTILE=0.999 \
+			-DTRIGGER_COUNTDOWN=5000 \
+			-DPERCENTILE=0.99 \
+			-DTRACE_DEST=trace.out \
+			-DTRACE_MAX_SZ=100000000 \
 			-agentlib:rperf2 \
 			-javaagent:instrumenter/target/instrumenter-1.2-SNAPSHOT-jar-with-dependencies.jar \
 			-cp gson-tester/target/json-tester-1.0-SNAPSHOT.jar:gson-tester/target/lib/gson-2.8.2.jar  \
@@ -48,6 +51,7 @@ run-gson-tester-median:
 			-DTRIGGER_CLASS=ru/raiffeisen/App \
 			-DTRIGGER_COUNTDOWN=2000 \
 			-DOUTPUT_INSTRUMENTED_CLASSES=1 \
+			-DTRACE_DEST=trace.out \
 			-agentlib:rperf2 \
 			-javaagent:instrumenter/target/instrumenter-1.2-SNAPSHOT-jar-with-dependencies.jar \
 			-cp gson-tester/target/json-tester-1.0-SNAPSHOT.jar:gson-tester/target/lib/gson-2.8.2.jar  \

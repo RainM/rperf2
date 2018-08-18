@@ -34,7 +34,7 @@ int symbols_resolver::size() {
 }
 
 void symbols_resolver::add_symbol(const routine_description& rd) {
-    DEBUG(std::cout << "new symbol " << rd.name << " at " << std::hex << rd.addr << "/" << rd.len << std::endl);
+    //std::cout << "new symbol " << rd.name << " at " << std::hex << rd.addr << "/" << rd.len << std::endl;
     m_symbols_by_addr2[rd.addr] = rd;
 }
 
@@ -99,8 +99,10 @@ int load_symbols_from_dso(const char* dso, uint64_t any_sym_addr) {
         while (!feof(nm_stm)) {
             char buf[10000] = {};
             if (fgets(buf, sizeof(buf), nm_stm) != NULL) {
-                auto scanned = sscanf(buf, "%x %x %1s %[^\n]", &addr, &sz, type, symbol);
+                auto scanned = sscanf(buf, "%lx %lx %1s %[^\n]", &addr, &sz, type, symbol);
                 if (scanned) {
+		    //std::cout << "input: " << buf << std::endl;
+		    //std::cout << "new symbol: " << std::hex << addr << "/" << sz << " " << type << " -> " << symbol << std::endl;
                     get_symbols_resolver()->add_symbol(dso, symbol, addr + offset, sz);
                 }
             }
@@ -137,7 +139,21 @@ bool operator < (const profile_record& pr1, const profile_record& pr2) {
     return pr1.total_counter < pr2.total_counter;
 }
 
-void process_pt(char* pt_begin, size_t len) {
+static int
+callback(struct dl_phdr_info *info, size_t size, void *data)
+{
+    int j;
+
+    printf("name=%s (%d segments)\n", info->dlpi_name,
+	   info->dlpi_phnum);
+
+    for (j = 0; j < info->dlpi_phnum; j++)
+	printf("\t\t header %2d: address=%10p/%p\n", j,
+	       (void *) (info->dlpi_addr + info->dlpi_phdr[j].p_vaddr), info->dlpi_phdr[j].p_memsz);
+    return 0;
+}
+
+void process_pt(char* pt_begin, size_t len, FILE* trace_output) {
     uint64_t dummy_symbol_start = 0;
     uint64_t dummy_symbol_end = 0;
     {
@@ -186,6 +202,8 @@ void process_pt(char* pt_begin, size_t len) {
     std::set<std::string> processed_dso;
 
     while (true) {
+    forward:
+
         auto status = pt_blk_sync_forward(decoder);
         if (status < 0) {
             DEBUG(std::cout << "can't sync" << std::endl);
@@ -222,6 +240,8 @@ void process_pt(char* pt_begin, size_t len) {
                 }
                 std::cout << "Total time: " << std::dec << tsc_to_ns(total) << std::endl;
 
+		//::dl_iterate_phdr(callback, NULL);
+
                 return;
             }
 
@@ -239,6 +259,7 @@ void process_pt(char* pt_begin, size_t len) {
 
                 if (status < 0) {
                     std::cout << "can't get pending event" << std::endl;
+		    goto forward;
                     break;
                 }
             }
@@ -285,7 +306,7 @@ void process_pt(char* pt_begin, size_t len) {
 			if (!resolved_once) {
 			    resolved_once = true;
 			} else {
-			    std::cerr << "Something went terribly wrong... Cyclic lookup" << std::endl;
+			    std::cerr << "Something went terribly wrong... Cyclic lookup for symbol at " << std::hex << ip << std::endl;
 			    // cyclic loop
 			    *(int*)0 = 0;
 			}
@@ -304,7 +325,7 @@ void process_pt(char* pt_begin, size_t len) {
                         key.name = info.dli_sname ? info.dli_sname : "totally unknown";
 
                         get_symbols_resolver()->add_symbol(key);
-			std::cout << "resolve addr " << ip << " found symbol: " << key.name << "@" << std::hex << key.addr << "/" << key.len << std::endl;
+			//std::cout << "resolve addr " << ip << " found symbol: " << key.name << "@" << std::hex << key.addr << "/" << key.len << std::endl;
 
 			goto try_resolve_symbol;
                     }
@@ -321,7 +342,8 @@ void process_pt(char* pt_begin, size_t len) {
 		}
 
 		if (prev_timestamp > now) {
-		    std::cout << "Did you use time machine? " << prev_timestamp << " -> " << now << std::endl;
+		    //std::cout << "Did you use time machine? " << prev_timestamp << " -> " << now << std::endl;
+		    now = prev_timestamp;
 		}
 
 		if (prev_timestamp == 0) {
@@ -349,9 +371,11 @@ void process_pt(char* pt_begin, size_t len) {
 
 		auto ns_since_start = tsc_to_ns(now - start_timestamp);
 
-		std::cout << "timestamp: " << std::dec << ns_since_start <<  " -> Routine: " << symbol_by_ip << "[" << std::hex << block.ip << "]" << std::endl;
+		//std::cout << "timestamp: " << std::dec << ns_since_start <<  " -> Routine: " << symbol_by_ip << "[" << std::hex << block.ip << "]" << std::endl;
+		fprintf(trace_output, "Timestamp: %ld\t %s [%p]\n", ns_since_start, symbol_by_ip.c_str(), ip);
 		if (lost_mtc || lost_cyc) {
-		    std::cout << "Lost: " << lost_mtc << "/" << lost_cyc << " mtc/cyc" << std::endl;
+		    //std::cout << "Lost: " << lost_mtc << "/" << lost_cyc << " mtc/cyc" << std::endl;
+		    fprintf(trace_output, "Lost: %d\n", (lost_mtc + lost_cyc));
 		}
 
 		uint64_t new_sync;

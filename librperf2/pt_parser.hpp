@@ -2,11 +2,12 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 
 #if defined(__cplusplus)
 extern "C"
 #endif
-void process_pt(char* pt_begin, size_t len);
+void process_pt(char* pt_begin, size_t len, FILE* trace_output);
 
 #if defined(__cplusplus)
 #include <string>

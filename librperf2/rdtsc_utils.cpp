@@ -1,4 +1,5 @@
-#include "rdtsc_utils.h"
+#include "rdtsc_utils.hpp"
+#include "common.h"
 
 #include <dlfcn.h>
 #include <fcntl.h>
@@ -23,14 +24,18 @@ static __inline__ unsigned long long rdtsc(void)
 
 double tsc_to_ns_multiplicator;
 double tsc_to_ns_scale_factor;
-uint64_t nominal_freq;
 
 
 uint64_t tsc_to_ns(uint64_t ts) {
-    return (ts * tsc_to_ns_multiplicator) / tsc_to_ns_scale_factor;
+    auto result = (ts * tsc_to_ns_multiplicator) / tsc_to_ns_scale_factor;
+    DEBUG(std::cout << "resolve tsc " << ts << " for " << result << "ns" << std::endl);
+    return result;
 }
 
-int get_nom_freq() {
+static uint64_t get_nominal_freq();
+
+uint64_t get_nom_freq() {
+    static uint64_t nominal_freq = get_nominal_freq();
     return nominal_freq;
 }
 
@@ -62,7 +67,7 @@ static void set_tsc_to_ns_consts() {
     tsc_to_ns_multiplicator = (duration_ns * tsc_to_ns_scale_factor) / tsc_diff;
 }
 
-static void set_nominal_freq() {
+static uint64_t get_nominal_freq() {
     Dl_info info;
     auto status = ::dladdr((void*)&tsc_to_ns, &info);
     if (status) {
@@ -73,8 +78,10 @@ static void set_nominal_freq() {
 
 	    FILE* nom_freq_stm = ::fopen(nom_freq_file.c_str(), "r");
 	    if (nom_freq_stm) {
-		if (::fread(&nominal_freq, 1, sizeof(nominal_freq), nom_freq_stm) == sizeof(nominal_freq)) {
+		uint64_t value;
+		if (::fread(&value, 1, sizeof(value), nom_freq_stm) == sizeof(value)) {
 		    ::fclose(nom_freq_stm);
+		    return value;
 		} else {
 		    ::fclose(nom_freq_stm);
 		    std::cout << "Can't read nominal freq from file" << std::endl;
@@ -93,20 +100,11 @@ static void set_nominal_freq() {
     ::exit(1);
 }
 
-bool run_as_executable() {
-    auto executable_ptr = ::dlopen(nullptr, 0);
-    auto dso_ptr = ::dlopen("librperf2.so", 0);
-
-    return executable_ptr == dso_ptr;
-}
-
 __attribute__((constructor))
 static void init() {
-    if (!run_as_executable) {
-	set_tsc_to_ns_consts();
-	set_nominal_freq();
-    }
+    set_tsc_to_ns_consts();
 }
+
 
 #define MSR_PLATFORM_INFO_OFFSET 0xce
 

@@ -207,7 +207,6 @@ Agent_OnLoad(JavaVM *vm, char *options, void *reserved) {
     jvmtiEnv* jvmti = nullptr;
     {
 	auto status = vm->GetEnv(reinterpret_cast<void**>(&jvmti), JVMTI_VERSION_1);
-	std::cout << "GetEnv: " << status << std::endl;
     }
 
     {

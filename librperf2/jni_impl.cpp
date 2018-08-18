@@ -38,7 +38,7 @@ pid_t gettid() {
 struct perf_pt_prof_engine {
     virtual ~perf_pt_prof_engine() {}
 
-    perf_pt_prof_engine(int skip_n, long buf_sz, long aux_sz, long trace_sz):
+    perf_pt_prof_engine(int skip_n, long buf_sz, long aux_sz, long trace_sz, const std::string& trace_dest):
         m_skip_cntr(skip_n)
     {
         m_tracer_config.data_bufsize = buf_sz;
@@ -46,6 +46,14 @@ struct perf_pt_prof_engine {
 
         m_data_sz = trace_sz;
         m_data_buf = ::malloc(m_data_sz);
+
+	if (strcmp(trace_dest.c_str(), "none") == 0) {
+	    m_trace_target = ::fopen("/dev/null", "w");
+	} else if (strcmp(trace_dest.c_str(), "stdout") == 0) {
+	    m_trace_target = stdout;
+	} else {
+	    m_trace_target = ::fopen(trace_dest.c_str(), "w");
+	}
     }
 
     void start() {
@@ -97,7 +105,7 @@ protected:
     }
 
     void parse_trace() {
-        process_pt((char*)m_trace.buf.p, m_trace.len);
+        process_pt((char*)m_trace.buf.p, m_trace.len, m_trace_target);
         std::cout << "Profiling DONE" << std::endl;
         ::exit(1);
     }
@@ -110,11 +118,12 @@ private:
     struct tracer_ctx* m_tracer_ctx;
     struct perf_pt_config m_tracer_config;
     struct perf_pt_trace m_trace;
+    FILE* m_trace_target;
 };
 
 struct perf_pt_prof_first_occurence: perf_pt_prof_engine {
-    perf_pt_prof_first_occurence(int skip_n, long buf_sz, long aux_sz, long trace_sz):
-        perf_pt_prof_engine(skip_n, buf_sz, aux_sz, trace_sz) {}
+    perf_pt_prof_first_occurence(int skip_n, long buf_sz, long aux_sz, long trace_sz, const std::string& trace_dest):
+        perf_pt_prof_engine(skip_n, buf_sz, aux_sz, trace_sz, trace_dest) {}
 
     virtual void do_start() override {
         start_prof();
@@ -130,8 +139,8 @@ struct perf_pt_prof_first_occurence: perf_pt_prof_engine {
 };
 
 struct perf_pt_prof_percentile: perf_pt_prof_engine {
-    perf_pt_prof_percentile(int skip_n, double percentile, long buf_sz, long aux_sz, long trace_sz):
-        perf_pt_prof_engine(skip_n, buf_sz, aux_sz, trace_sz), m_percentile(percentile), m_percentile_timing(0) {
+    perf_pt_prof_percentile(int skip_n, double percentile, long buf_sz, long aux_sz, long trace_sz, const std::string& trace_dest):
+        perf_pt_prof_engine(skip_n, buf_sz, aux_sz, trace_sz, trace_dest), m_percentile(percentile), m_percentile_timing(0) {
 
         double one_minus_n = (double)1 - percentile;
         m_number_of_iterations = ceil((double)1 / one_minus_n) - 1;
@@ -144,7 +153,10 @@ struct perf_pt_prof_percentile: perf_pt_prof_engine {
     virtual void do_stop() override {
         auto elapsed = stop_prof();
         if (m_percentile_timing) {
-            parse_trace();
+	    if (elapsed > m_percentile_timing) {
+		std::cout << "Processing trace with length " << elapsed << " > " << m_percentile_timing << std::endl;
+		parse_trace();
+	    }
         } else {
             m_timings.push_back(elapsed);
             if (m_timings.size() == m_number_of_iterations) {
@@ -167,31 +179,42 @@ private:
     uint64_t m_percentile_timing;
 };
 
-perf_pt_prof_engine* create_prof_engine(int skip_n, double percentile, long buf_sz, long aux_sz, long trace_sz) {
+perf_pt_prof_engine* create_prof_engine(int skip_n, double percentile, long buf_sz, long aux_sz, long trace_sz, const std::string& trace_dest) {
     if (percentile <= 0.5) {
-        return new perf_pt_prof_first_occurence(skip_n, buf_sz, aux_sz, trace_sz);
+        return new perf_pt_prof_first_occurence(skip_n, buf_sz, aux_sz, trace_sz, trace_dest);
     } else {
-        return new perf_pt_prof_percentile(skip_n, percentile, buf_sz, aux_sz, trace_sz);
+        return new perf_pt_prof_percentile(skip_n, percentile, buf_sz, aux_sz, trace_sz, trace_dest);
     }
 }
 
 /*
  * Class:     ru_raiffeisen_PerfPtProf
  * Method:    init
- * Signature: (IDJJJ)V
+ * Signature: (IDJJJLjava/lang/String;)V
  */
-JNIEXPORT void JNICALL
-Java_ru_raiffeisen_PerfPtProf_init
+JNIEXPORT void JNICALL Java_ru_raiffeisen_PerfPtProf_init
 (
-    JNIEnv *,
+    JNIEnv* env,
     jclass,
     jint skip_n,
     jdouble percentile,
     jlong buf_sz,
     jlong aux_sz,
-    jlong trace_sz)
+    jlong trace_sz,
+    jstring trace_direction)
 {
-    g_prof_engine = create_prof_engine(skip_n, percentile, buf_sz, aux_sz, trace_sz);
+    const char* target;
+    if (trace_direction) {
+	target = env->GetStringUTFChars(trace_direction, 0);
+    } else {
+	target = "stdout";
+    }
+
+    g_prof_engine = create_prof_engine(skip_n, percentile, buf_sz, aux_sz, trace_sz, target);
+
+    if (trace_direction) {
+	env->ReleaseStringUTFChars(trace_direction, target);
+    }
 }
 
 /*

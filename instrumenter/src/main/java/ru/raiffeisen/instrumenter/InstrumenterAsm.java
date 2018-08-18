@@ -50,6 +50,7 @@ public class InstrumenterAsm {
 	String perf_buf_sz_str = System.getProperty("PERF_BUF_SZ");
 	String perf_aux_sz_str = System.getProperty("PERF_AUX_SZ");
 	String trace_max_sz_str = System.getProperty("TRACE_MAX_SZ");
+	String trace_dest = System.getProperty("TRACE_DEST");
 
 	long perf_buf_sz = perf_buf_sz_str != null ? Long.valueOf(perf_buf_sz_str) : 32;
 	long perf_aux_sz = perf_aux_sz_str != null ? Long.valueOf(perf_aux_sz_str) : 256;
@@ -57,7 +58,7 @@ public class InstrumenterAsm {
 	double percentile = percentile_str != null ? Double.valueOf(percentile_str) : 0;
 
         int countdown = countdownStr != null ? Integer.valueOf(countdownStr) : 1;
-        PerfPtProf.init(countdown, percentile, perf_buf_sz, perf_aux_sz, trace_max_sz);
+        PerfPtProf.init(countdown, percentile, perf_buf_sz, perf_aux_sz, trace_max_sz, trace_dest);
 
         System.out.println("Trigger class: " + triggerClass);
         System.out.println("Trigger method: " + triggerMethod);

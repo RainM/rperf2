@@ -3,4 +3,4 @@
 #include "stdint.h"
 
 uint64_t tsc_to_ns(uint64_t ts);
-int get_nom_freq();
+uint64_t get_nom_freq();
