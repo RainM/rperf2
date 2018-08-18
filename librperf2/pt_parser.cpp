@@ -23,6 +23,7 @@ extern "C" {
 #include <set>
 
 #include "common.h"
+#include "rdtsc_utils.hpp"
 
 int decoder_callback(struct pt_packet_unknown* unknown, const struct pt_config* config, const uint8_t* pos, void* context) {
 
@@ -119,11 +120,13 @@ int read_memory(uint8_t *buffer, size_t size,const struct pt_asid *asid,uint64_t
     return size;
 }
 
+/*
 uint64_t get_ns_from_tsc(uint64_t tsc) {
     uint64_t tsc_freq_khz = 29 * 100000;
     uint64_t scale = (1000000 << 10) / (tsc_freq_khz);
     return (tsc * scale ) >> 10;
 }
+*/
 
 struct profile_record {
     uint64_t total_counter;
@@ -146,9 +149,6 @@ void process_pt(char* pt_begin, size_t len) {
             dummy_symbol_start = (uint64_t)sym_addr;
             dummy_symbol_end = dummy_symbol_start + syment->st_size;
         }
-
-        std::cout << "start addr = " << std::hex << dummy_symbol_start << std::endl;
-        std::cout << "end addr   = " << std::hex << dummy_symbol_end << std::endl;
     }
 
     struct pt_block_decoder* decoder = nullptr;
@@ -166,7 +166,7 @@ void process_pt(char* pt_begin, size_t len) {
     config.cpuid_0x15_eax = eax;
     config.cpuid_0x15_ebx = ebx;
     config.mtc_freq = 3;
-    config.nom_freq = 0x1d;
+    config.nom_freq = get_nom_freq();
 
     decoder = pt_blk_alloc_decoder(&config);
     if (!decoder) {
@@ -177,6 +177,7 @@ void process_pt(char* pt_begin, size_t len) {
     pt_image_set_callback(default_image, read_memory, nullptr);
 
     uint64_t prev_timestamp = 0;
+    uint64_t start_timestamp = 0;
     uint64_t start_ns = 0;
 
     std::unordered_map<std::string, uint64_t> profile;
@@ -187,12 +188,12 @@ void process_pt(char* pt_begin, size_t len) {
     while (true) {
         auto status = pt_blk_sync_forward(decoder);
         if (status < 0) {
-            std::cout << "can't sync" << std::endl;
+            DEBUG(std::cout << "can't sync" << std::endl);
 
             uint64_t new_sync;
 
             if (status == -pte_eos) {
-                std::cout << "EOS!!!" << std::endl;
+                DEBUG(std::cout << "EOS!!!" << std::endl);
 
                 std::set<profile_record> sorted_profile;
                 uint64_t total = 0;
@@ -215,19 +216,12 @@ void process_pt(char* pt_begin, size_t len) {
                     double percent = ((double)100 * item.total_counter) / total;
                     //std::cout << "counter: " <<  std::dec << get_ns_from_tsc(item.total_counter) << ", " << (double)std::endl;
                     for (auto& symbol : item.symbol_name) {
-                        std::cout << std::dec << get_ns_from_tsc(item.total_counter) << "ns\t[" << percent << "%]";
+                        std::cout << std::dec << tsc_to_ns(item.total_counter) << "ns\t[" << percent << "%]";
                         std::cout << "\t" << symbol << "\n";
                     }
                 }
-                std::cout << "Total time: " << std::dec << get_ns_from_tsc(total) << std::endl;
-                /*
-		  std::cout << "symbol table!!!!" << std::endl;
-		  auto it =  symbols_by_addr2.begin(), it_end =  symbols_by_addr2.end();
-		  while (it != it_end) {
-		  std::cout << std::hex << it->first << "@" << it->second.len << " -> " << it->second.name << "\n";
-		  ++it;
-		  }
-                */
+                std::cout << "Total time: " << std::dec << tsc_to_ns(total) << std::endl;
+
                 return;
             }
 
@@ -332,7 +326,7 @@ void process_pt(char* pt_begin, size_t len) {
 
 		if (prev_timestamp == 0) {
 		    prev_timestamp = now;
-		    start_ns = get_ns_from_tsc(now);
+		    start_timestamp = now;
 		}
 
 		symbols_the_same_time.push_back(symbol_by_ip);
@@ -353,9 +347,9 @@ void process_pt(char* pt_begin, size_t len) {
 		    prev_timestamp = now;
 		}
 
-		auto ns = get_ns_from_tsc(now);
+		auto ns_since_start = tsc_to_ns(now - start_timestamp);
 
-		std::cout << "timestamp: " << std::dec << (ns - start_ns) <<  " -> Routine: " << symbol_by_ip << "[" << std::hex << block.ip << "]" << std::endl;
+		std::cout << "timestamp: " << std::dec << ns_since_start <<  " -> Routine: " << symbol_by_ip << "[" << std::hex << block.ip << "]" << std::endl;
 		if (lost_mtc || lost_cyc) {
 		    std::cout << "Lost: " << lost_mtc << "/" << lost_cyc << " mtc/cyc" << std::endl;
 		}

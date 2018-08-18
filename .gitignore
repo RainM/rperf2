@@ -126,3 +126,4 @@ hs_err_pid*
 librperf2/ru_raiffeisen_PerfPtProf.h
 
 */target/processor-trace
+librperf2/librperf2.so.nominal_freq
