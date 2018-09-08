@@ -15,9 +15,13 @@
 #include "ru_raiffeisen_PerfPtProf.h"
 #include "jni.h"
 
+/*
 extern "C" {
 #include "collect.h"
 }
+*/
+
+#include "rcollect.hpp"
 
 #include "pt_parser.hpp"
 
@@ -41,8 +45,8 @@ struct perf_pt_prof_engine {
     perf_pt_prof_engine(int skip_n, long buf_sz, long aux_sz, long trace_sz, const std::string& trace_dest):
         m_skip_cntr(skip_n)
     {
-        m_tracer_config.data_bufsize = buf_sz;
-        m_tracer_config.aux_bufsize = aux_sz;
+        //m_tracer_config.data_bufsize = buf_sz;
+        //m_tracer_config.aux_bufsize = aux_sz;
 
         m_data_sz = trace_sz;
         m_data_buf = ::malloc(m_data_sz);
@@ -54,6 +58,8 @@ struct perf_pt_prof_engine {
 	} else {
 	    m_trace_target = ::fopen(trace_dest.c_str(), "w");
 	}
+
+	m_trace = ::create_pt_trace(100000000);
     }
 
     void start() {
@@ -73,16 +79,9 @@ protected:
     virtual void do_stop() = 0;
 
     void start_prof() {
-        struct perf_pt_cerror err = {};
+        //::memset(m_trace->addr, 0, m_trace->sz);
 
-        m_tracer_ctx = perf_pt_init_tracer(&m_tracer_config, &err);
-
-        ::memset(&m_trace, 0, sizeof(m_trace));
-
-        m_trace.capacity = m_data_sz;
-        m_trace.buf.p = m_data_buf;
-
-        bool status = perf_pt_start_tracer(m_tracer_ctx, &m_trace, &err);
+	pt_tracer_start(m_trace, 16, 256);
 
         ::clock_gettime(CLOCK_MONOTONIC_RAW, &m_start_time);
     }
@@ -97,16 +96,13 @@ protected:
         duration += end_time.tv_nsec;
         duration -= m_start_time.tv_nsec;
 
-        struct perf_pt_cerror err = {};
-        auto status = perf_pt_stop_tracer(m_tracer_ctx, &err);
-        perf_pt_free_tracer(m_tracer_ctx, &err);
-	m_tracer_ctx = nullptr;
+	pt_tracer_stop();
 
         return duration;
     }
 
     void parse_trace() {
-        process_pt((char*)m_trace.buf.p, m_trace.len, m_trace_target);
+        process_pt(m_trace->addr, m_trace->sz, m_trace_target);
         std::cout << "Profiling DONE" << std::endl;
         ::exit(1);
     }
@@ -117,8 +113,7 @@ private:
     void* m_data_buf;
     int64_t m_skip_cntr;
     struct tracer_ctx* m_tracer_ctx;
-    struct perf_pt_config m_tracer_config;
-    struct perf_pt_trace m_trace;
+    struct pt_trace* m_trace;
     FILE* m_trace_target;
 };
 
@@ -161,9 +156,10 @@ struct perf_pt_prof_percentile: perf_pt_prof_engine {
         } else {
             m_timings.push_back(elapsed);
             if (m_timings.size() == m_number_of_iterations) {
-                auto max_timing = std::max_element(std::begin(m_timings), std::end(m_timings));
-                m_percentile_timing = *max_timing;
-                std::cout << "Median: " << m_timings[m_timings.size()/2] << "ns\n";
+		std::sort(std::begin(m_timings), std::end(m_timings));
+                m_percentile_timing = m_timings.back();
+		m_median_timing = m_timings[m_timings.size()/2];
+                std::cout << "Median: " << m_median_timing << "ns\n";
                 std::cout << "Timing for " << m_percentile << " timings: " << m_percentile_timing << std::endl;
             }
         }
@@ -178,6 +174,7 @@ private:
     uint64_t m_number_of_iterations;
     double m_percentile;
     uint64_t m_percentile_timing;
+    uint64_t m_median_timing;
 };
 
 perf_pt_prof_engine* create_prof_engine(int skip_n, double percentile, long buf_sz, long aux_sz, long trace_sz, const std::string& trace_dest) {
@@ -219,7 +216,7 @@ JNIEXPORT void JNICALL Java_ru_raiffeisen_PerfPtProf_init
 }
 
 std::atomic<bool> thread_safety_checker(false);
-
+std::mutex locker;
 /*
  * Class:     ru_raiffeisen_PerfPtProf
  * Method:    start
@@ -244,15 +241,14 @@ one_more_time:
  */
 JNIEXPORT void JNICALL Java_ru_raiffeisen_PerfPtProf_stop(JNIEnv *, jclass) {
 
+        g_prof_engine->stop();
+
 one_more_time:
     auto old = thread_safety_checker.exchange(false);
     if (old != true) {
-	//std::cout << "Concurrent run detected!" << std::endl;
-	//::exit(2);
-	goto one_more_time;
+	std::cout << "WTF?????!!!!" << std::endl;
+	::exit(2);
     }
-
-    g_prof_engine->stop();
 }
 
 #include <execinfo.h>

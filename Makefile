@@ -4,12 +4,11 @@ GSON_TESTER_FOLDER=$(PWD)/gson-tester/
 
 CXX=/opt/rh/devtoolset-7/root/usr/bin/g++
 CC=/opt/rh/devtoolset-7/root/usr/bin/gcc
-#OPTFLAGS?=-O3 -flto
-OPTFLAGS?=-O1
+OPTFLAGS?=-O3 -flto
+#OPTFLAGS?=-O1
 # -fsanitize=address -fno-omit-frame-pointer
 CFLAGS=-g -pedantic -fpic
 CFLAGS+=$(OPTFLAGS)
-#CFLAGS+=-DENABLE_DEBUG
 
 
 build-libipt:
@@ -33,6 +32,7 @@ build-librperf2:
 run-gson-tester-999:
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH):librperf2:processor-trace/install/lib64 \
 		java \
+			-XX:+UseConcMarkSweepGC \
 			-DTRIGGER_METHOD=decode \
 			-DTRIGGER_CLASS=ru/raiffeisen/App \
 			-DTRIGGER_COUNTDOWN=5000 \
