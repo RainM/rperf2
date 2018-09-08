@@ -25,16 +25,19 @@ extern "C" {
 #include "common.h"
 #include "rdtsc_utils.hpp"
 
+typedef std::unique_lock<std::mutex> locker_t;
+
 int decoder_callback(struct pt_packet_unknown* unknown, const struct pt_config* config, const uint8_t* pos, void* context) {
 
 }
 
 int symbols_resolver::size() {
+    locker_t _l(m_mutex);
     return m_symbols_by_addr2.size();
 }
 
 void symbols_resolver::add_symbol(const routine_description& rd) {
-    //std::cout << "new symbol " << rd.name << " at " << std::hex << rd.addr << "/" << rd.len << std::endl;
+    locker_t _l(m_mutex);
     m_symbols_by_addr2[rd.addr] = rd;
 }
 
@@ -48,7 +51,32 @@ void symbols_resolver::add_symbol(const std::string& dso, const std::string& sym
     add_symbol(descr);
 }
 
+void symbols_resolver::add_jit_region(uint64_t addr, size_t sz) {
+    locker_t _l(m_mutex);
+    m_jit_region_size_by_region_addr[addr] = sz;
+}
+
+void symbols_resolver::unload_jit_symbols_from_addr(uint64_t addr) {
+    locker_t _l(m_mutex);
+    auto sz = m_jit_region_size_by_region_addr[addr];
+    if (sz) {
+	auto it_begin = map_t::reverse_iterator(m_symbols_by_addr2.find(addr));
+	auto it_end = it_begin;
+	if (it_end != m_symbols_by_addr2.rend()) {
+	    while (it_end != m_symbols_by_addr2.rend() && it_end->second.addr < (addr + sz)) {
+		++it_end;
+		//std::cout << "move next to " << it_end->second.addr << std::endl;
+	    }
+	    m_symbols_by_addr2.erase(it_end.base(), it_begin.base());
+	}
+    } else {
+	std::cout << "No JIT region at " << std::hex << addr << std::endl;
+    }
+}
+
 routine_description* symbols_resolver::lookup_symbol(uint64_t addr) {
+    locker_t _l(m_mutex);
+
     auto it = m_symbols_by_addr2.lower_bound(addr);
 
     size_t cntr = 10;
@@ -101,8 +129,6 @@ int load_symbols_from_dso(const char* dso, uint64_t any_sym_addr) {
             if (fgets(buf, sizeof(buf), nm_stm) != NULL) {
                 auto scanned = sscanf(buf, "%lx %lx %1s %[^\n]", &addr, &sz, type, symbol);
                 if (scanned) {
-		    //std::cout << "input: " << buf << std::endl;
-		    //std::cout << "new symbol: " << std::hex << addr << "/" << sz << " " << type << " -> " << symbol << std::endl;
                     get_symbols_resolver()->add_symbol(dso, symbol, addr + offset, sz);
                 }
             }
@@ -121,14 +147,6 @@ int read_memory(uint8_t *buffer, size_t size,const struct pt_asid *asid,uint64_t
     }
     return size;
 }
-
-/*
-uint64_t get_ns_from_tsc(uint64_t tsc) {
-    uint64_t tsc_freq_khz = 29 * 100000;
-    uint64_t scale = (1000000 << 10) / (tsc_freq_khz);
-    return (tsc * scale ) >> 10;
-}
-*/
 
 struct profile_record {
     uint64_t total_counter;
@@ -232,7 +250,6 @@ void process_pt(char* pt_begin, size_t len, FILE* trace_output) {
 
                 for (auto& item : sorted_profile) {
                     double percent = ((double)100 * item.total_counter) / total;
-                    //std::cout << "counter: " <<  std::dec << get_ns_from_tsc(item.total_counter) << ", " << (double)std::endl;
                     for (auto& symbol : item.symbol_name) {
                         std::cout << std::dec << tsc_to_ns(item.total_counter) << "ns\t[" << percent << "%]";
                         std::cout << "\t" << symbol << "\n";
@@ -240,14 +257,10 @@ void process_pt(char* pt_begin, size_t len, FILE* trace_output) {
                 }
                 std::cout << "Total time: " << std::dec << tsc_to_ns(total) << std::endl;
 
-		//::dl_iterate_phdr(callback, NULL);
-
                 return;
             }
 
             errcode = pt_blk_get_offset(decoder, &new_sync);
-
-            std::cout << "new sync: " << new_sync << std::endl;
         }
 
         for (;;) {
@@ -268,7 +281,6 @@ void process_pt(char* pt_begin, size_t len, FILE* trace_output) {
 
             if (status < 0) {
                 auto code = pt_error_code(-status);
-                //std::cout << "can't pt_blk_next " << pt_errstr(code) << std::endl;
                 break;
             } else {
                 std::string symbol_by_ip;
@@ -325,13 +337,11 @@ void process_pt(char* pt_begin, size_t len, FILE* trace_output) {
                         key.name = info.dli_sname ? info.dli_sname : "totally unknown";
 
                         get_symbols_resolver()->add_symbol(key);
-			//std::cout << "resolve addr " << ip << " found symbol: " << key.name << "@" << std::hex << key.addr << "/" << key.len << std::endl;
 
 			goto try_resolve_symbol;
                     }
 
                 }
-	    out:
 
 		uint64_t now;
 		uint32_t lost_mtc;
@@ -371,10 +381,8 @@ void process_pt(char* pt_begin, size_t len, FILE* trace_output) {
 
 		auto ns_since_start = tsc_to_ns(now - start_timestamp);
 
-		//std::cout << "timestamp: " << std::dec << ns_since_start <<  " -> Routine: " << symbol_by_ip << "[" << std::hex << block.ip << "]" << std::endl;
 		fprintf(trace_output, "Timestamp: %ld\t %s [%p]\n", ns_since_start, symbol_by_ip.c_str(), ip);
 		if (lost_mtc || lost_cyc) {
-		    //std::cout << "Lost: " << lost_mtc << "/" << lost_cyc << " mtc/cyc" << std::endl;
 		    fprintf(trace_output, "Lost: %d\n", (lost_mtc + lost_cyc));
 		}
 
@@ -382,7 +390,6 @@ void process_pt(char* pt_begin, size_t len, FILE* trace_output) {
 		auto errcode = pt_blk_get_offset(decoder, &new_sync);
 	    }
 	}
-	std::cout << "status == " << status << std::endl;
     }
     pt_blk_free_decoder(decoder);
 }

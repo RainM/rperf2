@@ -254,7 +254,7 @@ bool
 read_aux(void *aux_buf, struct perf_event_mmap_page *hdr,
          struct perf_pt_trace *trace, struct perf_pt_cerror *err)
 {
-  recorded_cnt += 1;
+    recorded_cnt += 1;
 
 
     // Use of atomics here for the same reasons as for handle_sample().
@@ -497,7 +497,7 @@ tracer_thread(void *arg)
     while (true) {
 
 	//printf("waiting context\n");
-	struct tracer_thread_args* ctx = NULL;
+	volatile struct tracer_thread_args* ctx = NULL;
 	while (ctx == NULL) {
 	    ctx = atomic_load((_Atomic struct tracer_thread_args**)&context_ptr);
 	}
@@ -560,6 +560,7 @@ perf_pt_init_tracer(struct perf_pt_config *tr_conf, struct perf_pt_cerror *err)
     // Obtain a file descriptor through which to speak to perf.
     tr_ctx->perf_fd = open_perf(tr_conf->aux_bufsize, err);
     if (tr_ctx->perf_fd == -1) {
+	printf("can't open perf_event\n");
         perf_pt_set_err(err, perf_pt_cerror_errno, errno);
         failing = true;
         goto clean;
@@ -590,6 +591,7 @@ perf_pt_init_tracer(struct perf_pt_config *tr_conf, struct perf_pt_cerror *err)
     tr_ctx->base_bufsize = (1 + tr_conf->data_bufsize) * page_size;
     tr_ctx->base_buf = mmap(NULL, tr_ctx->base_bufsize, PROT_WRITE, MAP_SHARED, tr_ctx->perf_fd, 0);
     if (tr_ctx->base_buf == MAP_FAILED) {
+	printf("can't map\n");
         perf_pt_set_err(err, perf_pt_cerror_errno, errno);
         failing = true;
         goto clean;
@@ -607,6 +609,7 @@ perf_pt_init_tracer(struct perf_pt_config *tr_conf, struct perf_pt_cerror *err)
     tr_ctx->aux_buf = mmap(NULL, base_header->aux_size, PROT_READ | PROT_WRITE,
         MAP_SHARED, tr_ctx->perf_fd, base_header->aux_offset);
     if (tr_ctx->aux_buf == MAP_FAILED) {
+	printf("can't map AUX\n");
         perf_pt_set_err(err, perf_pt_cerror_errno, errno);
         failing = true;
         goto clean;
@@ -731,6 +734,11 @@ perf_pt_stop_tracer(struct tracer_ctx *tr_ctx, struct perf_pt_cerror *err)
 bool
 perf_pt_free_tracer(struct tracer_ctx *tr_ctx, struct perf_pt_cerror *err) {
     int ret = true;
+
+    if (tr_ctx == NULL) {
+	printf("!!!!!!CTX = null!!!!!\n");
+	fflush(stdout);
+    }
 
     if ((tr_ctx->aux_buf) &&
         (munmap(tr_ctx->aux_buf, tr_ctx->aux_bufsize) == -1)) {

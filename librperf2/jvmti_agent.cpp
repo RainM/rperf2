@@ -57,9 +57,8 @@ cbMethodCompiled(
     const jvmtiAddrLocationMap* map,
     const void* compile_info)
 {
+    get_symbols_resolver()->add_jit_region((uint64_t)code_addr, code_size);
 
-    bool process_method = false;
-    
     jvmti_ptr<char*> method_name(jvmti);
     char* sig = nullptr;
     if (!jvmti->GetMethodName(method, &method_name.get(), &sig, NULL)) {
@@ -72,12 +71,6 @@ cbMethodCompiled(
 		full_method_name += "->";
 		full_method_name += method_name.get();
 		full_method_name += sig;
-
-		//std::cout << "Method: " << full_method_name << std::endl;
-		//std::cout << "addr: " << (uint64_t)code_addr << "@" << code_size << std::endl;
-		
-		//add_symbol(full_method_name, (uint64_t)code_addr, code_size);
-
 		
 		const jvmtiCompiledMethodLoadRecordHeader* comp_info =
 		    reinterpret_cast<const jvmtiCompiledMethodLoadRecordHeader*>(compile_info);
@@ -90,55 +83,25 @@ cbMethodCompiled(
 
 		    for (int i = 0; i < inline_info->numpcs; ++i) {
 			PCStackInfo* info = &inline_info->pcinfo[i];
-
 			std::string inlined_method;
-
-
-			//std::cout << "inline info: " << std::endl;
-
 			std::string inline_stack;
-
 			for (int i = info->numstackframes - 1; i >= 0; --i) {
 			    jmethodID inline_method = info->methods[i];
-
-			    /*
-			    jvmti_ptr<char*> inline_method_name(jvmti);
-			    jvmti_ptr<char*> inline_method_sign(jvmti);
-			    jvmti->GetMethodName(inline_method, &inline_method_name.get(), &inline_method_sign.get(), nullptr);
-
-			    jclass inline_clazz;
-			    jvmti->GetMethodDeclaringClass(inline_method, &inline_clazz);
-			    jvmti_ptr<char*> inline_class_sign(jvmti);
-			    jvmti->GetClassSignature(inline_clazz, &inline_class_sign.get(), nullptr);
-
-			    if (inline_class_sign.get() == nullptr || inline_method_name.get() == nullptr) {
-				std::cout << "NULL???" << std::endl;
-				::exit(4);
-				}
-			    */
-
 			    auto method_signature = get_inline_signature(jvmti, inline_method);
-			    //std::cout << "\t" << method_signature << std::endl;
 			    
 			    inline_stack += method_signature;
 			    if (i != 0) {
 				inline_stack += ">>";
 			    }
 			}
-
-			//std::cout << "--------- " << inline_stack << std::endl;
-			//std::cout << "addr: " << std::hex << (uint64_t)info->pc << std::endl;
-
 			uint64_t iaddr = (uint64_t)info->pc;			
 			if (i != (inline_info->numpcs - 1)) {
 			    uint64_t inext_addr = (uint64_t)inline_info->pcinfo[i+1].pc;
 			    get_symbols_resolver()->add_symbol("java-jit", inline_stack, iaddr, inext_addr - iaddr);
 			} else {
-
 			    uint64_t inext_addr = (uint64_t)code_addr + code_size;
 			    get_symbols_resolver()->add_symbol("java-jit", inline_stack, iaddr, inext_addr - iaddr);
 			}
-
 		    }
 		}
 	    } else {
@@ -162,8 +125,6 @@ std::string get_inline_signature(jvmtiEnv* jvmti, jmethodID method) {
 	if (!jvmti->GetMethodDeclaringClass(method, &clazz)) {
 	    jvmti_ptr<char*> class_sign(jvmti);
 	    if (!jvmti->GetClassSignature(clazz, &class_sign.get(), NULL)) {
-		
-		//result << class_sign.get() << "::" << method_name.get() << " / " << method_sign.get();
 		result << class_sign.get() << method_name.get();
 
 		jvmti_ptr<char*> source_file(jvmti);
@@ -189,7 +150,6 @@ cbMethodDynamic(jvmtiEnv *jvmti,
             const void* address,
             jint length)
 {
-    //std::cout << "dynamic method" << name << "@" << address << ":" << length << std::endl;
     get_symbols_resolver()->add_symbol("java-dyn", name, (uint64_t)address, length);
 }
 
@@ -197,7 +157,7 @@ void JNICALL cbMethodUnload
     (jvmtiEnv *jvmti_env,
      jmethodID method,
      const void* code_addr) {
-    std::cout << "Unload: " << method << "@" << std::hex << code_addr << std::endl;
+    get_symbols_resolver()->unload_jit_symbols_from_addr((uint64_t)code_addr);
 }
 
 JNIEXPORT jint JNICALL

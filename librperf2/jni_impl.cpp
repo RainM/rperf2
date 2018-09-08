@@ -100,6 +100,7 @@ protected:
         struct perf_pt_cerror err = {};
         auto status = perf_pt_stop_tracer(m_tracer_ctx, &err);
         perf_pt_free_tracer(m_tracer_ctx, &err);
+	m_tracer_ctx = nullptr;
 
         return duration;
     }
@@ -217,12 +218,21 @@ JNIEXPORT void JNICALL Java_ru_raiffeisen_PerfPtProf_init
     }
 }
 
+std::atomic<bool> thread_safety_checker(false);
+
 /*
  * Class:     ru_raiffeisen_PerfPtProf
  * Method:    start
  * Signature: ()V
  */
 JNIEXPORT void JNICALL Java_ru_raiffeisen_PerfPtProf_start(JNIEnv *, jclass) {
+
+one_more_time:
+    auto old = thread_safety_checker.exchange(true);
+    if (old != false) {
+	//std::cout << "Concurrent run detected!" << std::endl;
+	goto one_more_time;
+    }
 
     g_prof_engine->start();
 }
@@ -233,6 +243,14 @@ JNIEXPORT void JNICALL Java_ru_raiffeisen_PerfPtProf_start(JNIEnv *, jclass) {
  * Signature: ()V
  */
 JNIEXPORT void JNICALL Java_ru_raiffeisen_PerfPtProf_stop(JNIEnv *, jclass) {
+
+one_more_time:
+    auto old = thread_safety_checker.exchange(false);
+    if (old != true) {
+	//std::cout << "Concurrent run detected!" << std::endl;
+	//::exit(2);
+	goto one_more_time;
+    }
 
     g_prof_engine->stop();
 }
