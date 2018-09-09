@@ -162,8 +162,6 @@ void JNICALL cbMethodUnload
 
 JNIEXPORT jint JNICALL
 Agent_OnLoad(JavaVM *vm, char *options, void *reserved) {
-    std::cout << "Hello world from JVMTI" << std::endl;
-
     jvmtiEnv* jvmti = nullptr;
     {
 	auto status = vm->GetEnv(reinterpret_cast<void**>(&jvmti), JVMTI_VERSION_1);

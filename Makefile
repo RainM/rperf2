@@ -2,12 +2,12 @@ LIBIPT_FOLDER=$(PWD)/processor-trace/
 INSTRUMENTER_FOLDER=$(PWD)/instrumenter/
 GSON_TESTER_FOLDER=$(PWD)/gson-tester/
 
-CXX=/opt/rh/devtoolset-7/root/usr/bin/g++
-CC=/opt/rh/devtoolset-7/root/usr/bin/gcc
+#CXX=/opt/rh/devtoolset-7/root/usr/bin/g++
+#CC=/opt/rh/devtoolset-7/root/usr/bin/gcc
 OPTFLAGS?=-O3 -flto
 #OPTFLAGS?=-O1
 # -fsanitize=address -fno-omit-frame-pointer
-CFLAGS=-g -pedantic -fpic
+CFLAGS=-g -pedantic -fpic -march=native -DENABLE_DEBUG1
 CFLAGS+=$(OPTFLAGS)
 
 
@@ -33,11 +33,14 @@ run-gson-tester-999:
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH):librperf2:processor-trace/install/lib64 \
 		java \
 			-XX:+UseConcMarkSweepGC \
+			-XX:+PrintGCDetails \
+			-Xmx30g -Xmn25g \
+			-XX:-PrintAssembly -XX:-DebugNonSafepoints \
 			-DTRIGGER_METHOD=decode \
 			-DTRIGGER_CLASS=ru/raiffeisen/App \
-			-DTRIGGER_COUNTDOWN=5000 \
+			-DTRIGGER_COUNTDOWN=12000 \
 			-DPERCENTILE=0.999 \
-			-DTRACE_DEST=trace.out \
+			-DTRACE_DEST=trace_999.out \
 			-DTRACE_MAX_SZ=100000000 \
 			-agentlib:rperf2 \
 			-javaagent:instrumenter/target/instrumenter-1.2-SNAPSHOT-jar-with-dependencies.jar \
@@ -47,11 +50,16 @@ run-gson-tester-999:
 run-gson-tester-median:
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH):librperf2:processor-trace/install/lib64 \
 		java \
+			-XX:+UseConcMarkSweepGC \
+			-XX:+PrintGCDetails \
+			-Xmx30g -Xmn25g \
+			-XX:-PrintAssembly -XX:-DebugNonSafepoints \
 			-DTRIGGER_METHOD=decode \
 			-DTRIGGER_CLASS=ru/raiffeisen/App \
-			-DTRIGGER_COUNTDOWN=2000 \
-			-DOUTPUT_INSTRUMENTED_CLASSES=1 \
-			-DTRACE_DEST=trace.out \
+			-DTRIGGER_COUNTDOWN=12000 \
+			-DPERCENTILE=0.4 \
+			-DTRACE_DEST=trace_median.out \
+			-DTRACE_MAX_SZ=100000000 \
 			-agentlib:rperf2 \
 			-javaagent:instrumenter/target/instrumenter-1.2-SNAPSHOT-jar-with-dependencies.jar \
 			-cp gson-tester/target/json-tester-1.0-SNAPSHOT.jar:gson-tester/target/lib/gson-2.8.2.jar  \

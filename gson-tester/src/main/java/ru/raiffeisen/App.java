@@ -44,18 +44,22 @@ public class App
     public static void main( String[] args )
     {
         System.out.println( "Hello World!" );
-	
+
+	String json = generate_json(3000);
+	int r = 0;
 	for (int i = 0; i < 20000; ++i) {
-	    String json = generate_json(i);
 	    Map res = decode(json);
 	    
-	    if (res.size() != i) {
+	    if (res.size() != 3000) {
 		System.out.println("Something went wrong...");
 	    }
 	    
 	    if (i % 1000 == 0) {
 		System.out.println("i = " + i);
 	    }
+
+	    r += res.size();
 	}
+	System.out.println("r = " + r);
     }
 }

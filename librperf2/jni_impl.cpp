@@ -9,6 +9,7 @@
 #include <atomic>
 #include <unordered_set>
 #include <unordered_map>
+#include <fstream>
 
 #include <sys/types.h>
 
@@ -104,6 +105,23 @@ protected:
     void parse_trace() {
         process_pt(m_trace->addr, m_trace->sz, m_trace_target);
         std::cout << "Profiling DONE" << std::endl;
+	
+/*
+	{
+	    std::ifstream maps_file("/proc/self/maps");
+	    if (maps_file) {
+		std::cout << "address space structure:" << std::endl;
+		std::string line;
+		while (std::getline(maps_file, line)) {
+		    std::cout << line << "\n";
+		}
+		std::cout << std::endl;
+	    } else {
+		std::cout << "cant open map file" << std::endl;
+	    }
+	}
+*/
+
         ::exit(1);
     }
 

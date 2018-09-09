@@ -18,6 +18,7 @@ void process_pt(char* pt_begin, size_t len, FILE* trace_output);
 
 struct routine_description {
     uint64_t addr;
+    uint64_t dso_addr;
     size_t len;
     std::string name;
     std::string dso;
@@ -25,7 +26,10 @@ struct routine_description {
 
 struct symbols_resolver {
     void add_symbol(const routine_description& rd);
-    void add_symbol(const std::string& dso, const std::string& symbol_name, uint64_t addr, size_t len);
+    void add_symbol(const std::string& dso, const std::string& symbol_name, uint64_t addr, uint64_t addr_in_disassembly, size_t len);
+    void add_symbol(const std::string& dso, const std::string& symbol_name, uint64_t addr, size_t len) {
+	add_symbol(dso, symbol_name, addr, 0, len);
+    }
     void add_jit_region(uint64_t addr, size_t sz);
 
     void unload_jit_symbols_from_addr(uint64_t addr);

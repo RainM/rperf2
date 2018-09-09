@@ -41,12 +41,21 @@ void symbols_resolver::add_symbol(const routine_description& rd) {
     m_symbols_by_addr2[rd.addr] = rd;
 }
 
-void symbols_resolver::add_symbol(const std::string& dso, const std::string& symbol_name, uint64_t addr, size_t len) {
+void symbols_resolver::add_symbol(
+    const std::string& dso, 
+    const std::string& symbol_name, 
+    uint64_t addr, 
+    uint64_t addr_in_disassembly,
+    size_t len) 
+{
     routine_description descr;
     descr.addr = addr;
     descr.len = len;
     descr.name = symbol_name;
     descr.dso = dso;
+    descr.dso_addr = addr_in_disassembly;
+
+    //std::cout << "add symbol " << symbol_name << "@" << dso << " -> " << std::hex << addr << "\n";
 
     add_symbol(descr);
 }
@@ -116,6 +125,7 @@ int load_symbols_from_dso(const char* dso, uint64_t any_sym_addr) {
     std::string cmd;
     cmd += "nm -a -S --demangle ";
     cmd += dso;
+    std::cout << "CMD: " << cmd << std::endl;
     FILE* nm_stm = ::popen(cmd.c_str(), "r");
 
     if (nm_stm) {
@@ -129,11 +139,16 @@ int load_symbols_from_dso(const char* dso, uint64_t any_sym_addr) {
             if (fgets(buf, sizeof(buf), nm_stm) != NULL) {
                 auto scanned = sscanf(buf, "%lx %lx %1s %[^\n]", &addr, &sz, type, symbol);
                 if (scanned) {
-                    get_symbols_resolver()->add_symbol(dso, symbol, addr + offset, sz);
+                    get_symbols_resolver()->add_symbol(dso, symbol, addr + offset, addr, sz);
                 }
             }
         }
         ::fclose(nm_stm);
+	return 1;
+    } else {
+	auto err = errno;
+	std::cout << "Error: " << err << std::endl;
+	return -1;
     }
 }
 
@@ -286,6 +301,7 @@ void process_pt(char* pt_begin, size_t len, FILE* trace_output) {
                 std::string symbol_by_ip;
 
                 uint64_t ip = (uint64_t)block.ip;
+		uint64_t asm_ip = 0; // add in disassembly. relevant for code from DSO only
 
 		bool resolved_once = false;
             try_resolve_symbol:
@@ -296,24 +312,36 @@ void process_pt(char* pt_begin, size_t len, FILE* trace_output) {
                         symbol_by_ip = symbol_info->name;
                         symbol_by_ip += "@";
                         symbol_by_ip += symbol_info->dso;
+
+			if (symbol_info->dso_addr) {
+			    asm_ip = symbol_info->dso_addr + (ip - symbol_info->addr);
+			}
                     } else {
                         Dl_info info;
                         Elf64_Sym* syment;
                         auto status = ::dladdr1((void*)ip, &info, (void**)&syment, RTLD_DL_SYMENT);
                         if (status) {
                             if (info.dli_fname && strlen(info.dli_fname)) {
+				//std::cout << "dso: " << info.dli_fname << std::endl;
                                 auto it = processed_dso.find(info.dli_fname);
                                 if (it == processed_dso.end()) {
                                     processed_dso.insert(info.dli_fname);
                                     std::cout << "New DSO: " << info.dli_fname << std::endl;
 
-                                    load_symbols_from_dso(info.dli_fname, ip);
+                                    auto status = load_symbols_from_dso(info.dli_fname, ip);
+				    if (status < 0) {
+					std::cout << "Can't load symbold from DSO, status = " << status << std::endl;
+				    }
 
                                     // if was brand new DSO. Let's try to lookup symbol one more time
                                     goto try_resolve_symbol;
                                 }
-                            }
-                        }
+                            } else {
+				std::cout << "no DSO name for addr " << std::hex << ip << std::endl;
+			    }
+                        } else {
+			    std::cout << "no DSO for addr " << std::hex << ip << std::endl;
+			}
 			
 			if (!resolved_once) {
 			    resolved_once = true;
@@ -380,8 +408,12 @@ void process_pt(char* pt_begin, size_t len, FILE* trace_output) {
 		}
 
 		auto ns_since_start = tsc_to_ns(now - start_timestamp);
-
-		fprintf(trace_output, "Timestamp: %ld\t %s [%p]\n", ns_since_start, symbol_by_ip.c_str(), ip);
+		
+		if (asm_ip) {
+		    fprintf(trace_output, "Timestamp: %ld\t %s [%p/%p]\n", ns_since_start, symbol_by_ip.c_str(), ip, asm_ip);
+		} else {
+		    fprintf(trace_output, "Timestamp: %ld\t %s [%p]\n", ns_since_start, symbol_by_ip.c_str(), ip);
+		}
 		if (lost_mtc || lost_cyc) {
 		    fprintf(trace_output, "Lost: %d\n", (lost_mtc + lost_cyc));
 		}
