@@ -20,10 +20,10 @@ build-libipt:
 	make clean  install -C $(LIBIPT_FOLDER)/build -j8
 
 build-instrumenter:
-	cd $(INSTRUMENTER_FOLDER) ; mvn -Djavax.net.ssl.trustStore=/home/ruamnsa/dev/ET-XXXX-docker/scripts/cks.jks clean package
+	cd $(INSTRUMENTER_FOLDER) ; mvn $(MVNFLAGS) clean package
 
 build-gson-tester:
-	cd $(GSON_TESTER_FOLDER) ; mvn -Djavax.net.ssl.trustStore=/home/ruamnsa/dev/ET-XXXX-docker/scripts/cks.jks clean package
+	cd $(GSON_TESTER_FOLDER) ; mvn $(MVNFLAGS) clean package
 
 build-librperf2:
 	cd librperf2 ; javah -cp ../instrumenter/target/classes/ ru.raiffeisen.PerfPtProf
