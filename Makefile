@@ -32,35 +32,39 @@ build-librperf2:
 run-gson-tester-999:
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH):librperf2:processor-trace/install/lib64 \
 		java \
-			-XX:+UseConcMarkSweepGC \
-			-XX:+PrintGCDetails \
 			-Xmx30g -Xmn25g \
-			-XX:-PrintAssembly -XX:-DebugNonSafepoints \
-			-DTRIGGER_METHOD=decode \
-			-DTRIGGER_CLASS=ru/raiffeisen/App \
-			-DTRIGGER_COUNTDOWN=12000 \
-			-DPERCENTILE=0.999 \
-			-DTRACE_DEST=trace_999.out \
-			-DTRACE_MAX_SZ=100000000 \
-			-agentlib:rperf2 \
+			-XX:MaxInlineSize=13500 \
+			-DTRIGGER_METHOD=decode	 		\
+			-DTRIGGER_CLASS=ru/raiffeisen/App2 	\
+			-DTRIGGER_COUNTDOWN=15500 		\
+			-DPERCENTILE=0.999 			\
+			-DTRACE_DEST=trace_999.out 		\
+			-DTRACE_MAX_SZ=100000000 		\
+			-agentlib:rperf2 			\
 			-javaagent:instrumenter/target/instrumenter-1.2-SNAPSHOT-jar-with-dependencies.jar \
 			-cp gson-tester/target/json-tester-1.0-SNAPSHOT.jar:gson-tester/target/lib/gson-2.8.2.jar  \
-			ru.raiffeisen.App
+			ru.raiffeisen.App2
 
 run-gson-tester-median:
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH):librperf2:processor-trace/install/lib64 \
 		java \
-			-XX:+UseConcMarkSweepGC \
-			-XX:+PrintGCDetails \
 			-Xmx30g -Xmn25g \
-			-XX:-PrintAssembly -XX:-DebugNonSafepoints \
-			-DTRIGGER_METHOD=decode \
-			-DTRIGGER_CLASS=ru/raiffeisen/App \
-			-DTRIGGER_COUNTDOWN=12000 \
-			-DPERCENTILE=0.4 \
-			-DTRACE_DEST=trace_median.out \
-			-DTRACE_MAX_SZ=100000000 \
-			-agentlib:rperf2 \
+			-XX:MaxInlineSize=13500 \
+			-DTRIGGER_METHOD=decode	 		\
+			-DTRIGGER_CLASS=ru/raiffeisen/App2 	\
+			-DTRIGGER_COUNTDOWN=20000 		\
+			-DTRACE_DEST=trace_median.out 		\
+			-DTRACE_MAX_SZ=100000000 		\
+			-agentlib:rperf2 			\
 			-javaagent:instrumenter/target/instrumenter-1.2-SNAPSHOT-jar-with-dependencies.jar \
 			-cp gson-tester/target/json-tester-1.0-SNAPSHOT.jar:gson-tester/target/lib/gson-2.8.2.jar  \
-			ru.raiffeisen.App
+			ru.raiffeisen.App2
+
+run-gson-tester:
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH):librperf2:processor-trace/install/lib64 \
+		java \
+			-Xmx30g -Xmn25g \
+			-XX:MaxInlineSize=13500 \
+			-XX:+PreserveFramePointer \
+			-cp gson-tester/target/json-tester-1.0-SNAPSHOT.jar:gson-tester/target/lib/gson-2.8.2.jar  \
+			ru.raiffeisen.App2

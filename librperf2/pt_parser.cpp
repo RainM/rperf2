@@ -55,7 +55,7 @@ void symbols_resolver::add_symbol(
     descr.dso = dso;
     descr.dso_addr = addr_in_disassembly;
 
-    //std::cout << "add symbol " << symbol_name << "@" << dso << " -> " << std::hex << addr << "\n";
+    //std::cout << "add symbol " << symbol_name << "@" << dso << " -> " << std::hex << addr << "@" << std::dec << len << "\n";
 
     add_symbol(descr);
 }
@@ -341,6 +341,16 @@ void process_pt(char* pt_begin, size_t len, FILE* trace_output) {
 			    }
                         } else {
 			    std::cout << "no DSO for addr " << std::hex << ip << std::endl;
+
+			    routine_description key;
+
+			    key.addr = ip;
+			    key.dso_addr = 0;
+			    key.len = 1;
+			    key.name = "totally unknown";
+			    get_symbols_resolver()->add_symbol(key);
+
+			    goto try_resolve_symbol;
 			}
 			
 			if (!resolved_once) {

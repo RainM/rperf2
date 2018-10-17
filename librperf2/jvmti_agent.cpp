@@ -47,6 +47,41 @@ jvmti_ptr<T>&& ensure_deallocate(jvmtiEnv* e) {
 
 std::string get_inline_signature(jvmtiEnv* jvmti, jmethodID method);
 
+enum resolution {
+    RESOLUTION_LINES = 1,
+    RESOLUTION_METHODS = 2
+};
+
+struct options {
+    resolution output_resolution;
+};
+
+
+options parse_options(std::string s) {
+    std::vector<std::string> args;
+    size_t pos = 0;
+    std::string token;
+    while ((pos = s.find(",")) != std::string::npos) {
+	token = s.substr(0, pos);
+	args.push_back(token);
+	s.erase(0, pos + 1);
+    }
+
+    options result;
+
+    result.output_resolution = RESOLUTION_METHODS;
+
+    for (auto& item : args) {
+	if (item == std::string("lines")) {
+	    result.output_resolution = RESOLUTION_LINES;
+	}
+    }
+
+    return result;
+}
+
+options global_options;
+
 static void JNICALL
 cbMethodCompiled(
     jvmtiEnv *jvmti,
@@ -72,39 +107,45 @@ cbMethodCompiled(
 		full_method_name += method_name.get();
 		full_method_name += sig;
 		
-		const jvmtiCompiledMethodLoadRecordHeader* comp_info =
-		    reinterpret_cast<const jvmtiCompiledMethodLoadRecordHeader*>(compile_info);
+		if (global_options.output_resolution == RESOLUTION_LINES) {
+		    const jvmtiCompiledMethodLoadRecordHeader* comp_info =
+			reinterpret_cast<const jvmtiCompiledMethodLoadRecordHeader*>(compile_info);
 
-		if (comp_info->kind == JVMTI_CMLR_INLINE_INFO) {
-		    const jvmtiCompiledMethodLoadInlineRecord* inline_info =
-			reinterpret_cast<const jvmtiCompiledMethodLoadInlineRecord*>(compile_info);
+		    if (comp_info->kind == JVMTI_CMLR_INLINE_INFO) {
+			const jvmtiCompiledMethodLoadInlineRecord* inline_info =
+			    reinterpret_cast<const jvmtiCompiledMethodLoadInlineRecord*>(compile_info);
 
-		    get_symbols_resolver()->add_symbol("java-jit", full_method_name, (uint64_t)code_addr, (uint64_t)inline_info->pcinfo[0].pc - (uint64_t)code_addr);
+			get_symbols_resolver()->add_symbol("java-jit", full_method_name, (uint64_t)code_addr, (uint64_t)inline_info->pcinfo[0].pc - (uint64_t)code_addr);
 
-		    for (int i = 0; i < inline_info->numpcs; ++i) {
-			PCStackInfo* info = &inline_info->pcinfo[i];
-			std::string inlined_method;
-			std::string inline_stack;
-			for (int i = info->numstackframes - 1; i >= 0; --i) {
-			    jmethodID inline_method = info->methods[i];
-			    auto method_signature = get_inline_signature(jvmti, inline_method);
+			for (int i = 0; i < inline_info->numpcs; ++i) {
+			    PCStackInfo* info = &inline_info->pcinfo[i];
+			    std::string inlined_method;
+			    std::string inline_stack;
+			    for (int i = info->numstackframes - 1; i >= 0; --i) {
+				jmethodID inline_method = info->methods[i];
+				auto method_signature = get_inline_signature(jvmti, inline_method);
 			    
-			    inline_stack += method_signature;
-			    if (i != 0) {
-				inline_stack += ">>";
+				inline_stack += method_signature;
+				if (i != 0) {
+				    inline_stack += ">>";
+				}
+			    }
+			    uint64_t iaddr = (uint64_t)info->pc;			
+			    if (i != (inline_info->numpcs - 1)) {
+				uint64_t inext_addr = (uint64_t)inline_info->pcinfo[i+1].pc;
+				get_symbols_resolver()->add_symbol("java-jit", inline_stack, iaddr, inext_addr - iaddr);
+			    } else {
+				uint64_t inext_addr = (uint64_t)code_addr + code_size;
+				get_symbols_resolver()->add_symbol("java-jit", inline_stack, iaddr, inext_addr - iaddr);
 			    }
 			}
-			uint64_t iaddr = (uint64_t)info->pc;			
-			if (i != (inline_info->numpcs - 1)) {
-			    uint64_t inext_addr = (uint64_t)inline_info->pcinfo[i+1].pc;
-			    get_symbols_resolver()->add_symbol("java-jit", inline_stack, iaddr, inext_addr - iaddr);
-			} else {
-			    uint64_t inext_addr = (uint64_t)code_addr + code_size;
-			    get_symbols_resolver()->add_symbol("java-jit", inline_stack, iaddr, inext_addr - iaddr);
-			}
+		    } else {
+			get_symbols_resolver()->add_symbol("java-jit", full_method_name, (uint64_t)code_addr, code_size);
 		    }
+		} else {
+		    get_symbols_resolver()->add_symbol("java-jit", full_method_name, (uint64_t)code_addr, code_size);
 		}
-	    } else {
+	    } else { 
 		get_symbols_resolver()->add_symbol("java-jit", "unknown1", (uint64_t)code_addr, code_size);
 	    }
 	} else {
@@ -162,6 +203,12 @@ void JNICALL cbMethodUnload
 
 JNIEXPORT jint JNICALL
 Agent_OnLoad(JavaVM *vm, char *options, void *reserved) {
+
+    global_options = parse_options(std::string(options ? options : ""));
+    std::cout << "***OPTIONS***" << std::endl;
+    std::cout << "Resolution: " << (global_options.output_resolution == RESOLUTION_METHODS ? "METHODS" : "LINES") << std::endl;
+    std::cout << "*************" << std::endl;
+
     jvmtiEnv* jvmti = nullptr;
     {
 	auto status = vm->GetEnv(reinterpret_cast<void**>(&jvmti), JVMTI_VERSION_1);
