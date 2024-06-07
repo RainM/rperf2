@@ -1,8 +1,8 @@
 package ru.raiffeisen.instrumenter;
 
-import com.devexperts.jagent.ClassInfoCache;
-import com.devexperts.jagent.ClassInfoVisitor;
-import com.devexperts.jagent.FrameClassWriter;
+import ru.devexperts.jagent.ClassInfoCache;
+import ru.devexperts.jagent.ClassInfoVisitor;
+import ru.devexperts.jagent.FrameClassWriter;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.MethodVisitor;
@@ -11,8 +11,11 @@ import ru.raiffeisen.PerfPtProf;
 
 import java.io.File;
 import java.io.IOException;
+import java.lang.instrument.ClassFileTransformer;
+import java.lang.instrument.IllegalClassFormatException;
 import java.lang.instrument.Instrumentation;
 import java.nio.file.Files;
+import java.security.ProtectionDomain;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.regex.Matcher;
@@ -64,60 +67,50 @@ public class InstrumenterAsm {
         System.out.println("Trigger method: " + triggerMethod);
         System.out.println("Trigger method signature: " + triggerMethodSignature);
 
-        instr.addTransformer((classLoader, s, aClass, protectionDomain, bytes) -> {
+        instr.addTransformer(new ClassFileTransformer() {
+            public
+            byte[]
+            transform(  ClassLoader         loader,
+                        String              className,
+                        Class<?>            classBeingRedefined,
+                        ProtectionDomain protectionDomain,
+                        byte[]              classfileBuffer)
+                    throws IllegalClassFormatException {
+                boolean should_transform = patterns.length == 0;
 
-            boolean should_transform = patterns.length == 0;
-
-            for (Pattern p : patterns) {
-                Matcher m = p.matcher(s);
-                if (m.find()) {
-                    should_transform = true;
-                    break;
+                for (Pattern p : patterns) {
+                    Matcher m = p.matcher(className);
+                    if (m.find()) {
+                        should_transform = true;
+                        break;
+                    }
                 }
-            }
 
-            if (!should_transform) {
-                return null;
-            }
-
-            ClassReader cr = new ClassReader(bytes);
-
-            if ((cr.getAccess() & Opcodes.ACC_INTERFACE) != 0) {
-                return bytes;
-            }
-
-            ClassInfoVisitor ciVisitor = new ClassInfoVisitor();
-            cr.accept(ciVisitor, 0);
-            // update cache with information about classes
-            cache.getOrInitClassInfoMap(classLoader).put(s, ciVisitor.buildClassInfo());
-            // create FrameClassWriter using cache
-
-            ClassWriter cw = //new ClassWriter(COMPUTE_MAXS | COMPUTE_FRAMES);
-                    new FrameClassWriter(classLoader, cache, V1_8);
-
-            cr.accept(new ClassInstrumenter(ASM5, cw, triggerClass, triggerMethod, triggerMethodSignature), 0);
-
-            byte[] result = cw.toByteArray();
-
-	    /*
-            if (dump_class_files) {
-                File out_dir = new File("out");
-                out_dir.mkdir();
-
-                File out_file = new File("out/" + s + ".class");
-                new File(out_file.getParent()).mkdirs();
-
-                try {
-                    Files.write(out_file.toPath(), result);
-                } catch (IOException e) {
-                    e.printStackTrace();
-                    System.exit(2);
+                if (!should_transform) {
+                    return null;
                 }
-		}
-	    */
 
-            return result;
+                ClassReader cr = new ClassReader(classfileBuffer);
+
+                if ((cr.getAccess() & Opcodes.ACC_INTERFACE) != 0) {
+                    return classfileBuffer;
+                }
+
+                ClassInfoVisitor ciVisitor = new ClassInfoVisitor();
+                cr.accept(ciVisitor, 0);
+                // update cache with information about classes
+                cache.getOrInitClassInfoMap(loader).put(className, ciVisitor.buildClassInfo());
+                // create FrameClassWriter using cache
+
+                ClassWriter cw = //new ClassWriter(COMPUTE_MAXS | COMPUTE_FRAMES);
+                        new FrameClassWriter(loader, cache, V1_8);
+
+                cr.accept(new ClassInstrumenter(ASM5, cw, triggerClass, triggerMethod, triggerMethodSignature), 0);
+
+                return cw.toByteArray();
+            }
         });
+
     }
 
     private static class MethodAdapter extends MethodVisitor {

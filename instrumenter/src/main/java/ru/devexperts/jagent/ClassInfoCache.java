@@ -1,4 +1,4 @@
-package com.devexperts.jagent;
+package ru.devexperts.jagent;
 
 /*
  * #%L
